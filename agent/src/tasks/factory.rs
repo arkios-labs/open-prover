@@ -1,0 +1,22 @@
+use crate::io::input::InputProvider;
+use crate::tasks::Agent;
+use crate::tasks::r0::RiscZeroAgent;
+use anyhow::Result;
+use tracing::warn;
+
+pub fn get_agent(input: Box<dyn InputProvider>) -> Result<Box<dyn Agent>> {
+    let bytes = input.read_bytes()?;
+    let agent_type = String::from_utf8(bytes)?;
+
+    // TODO: Implement support for additional agent types such as SP1Agent, etc.
+    match agent_type.trim() {
+        "r0" => Ok(Box::new(RiscZeroAgent)),
+        _ => {
+            warn!(
+                "Unrecognized agent type '{}'; defaulting to RiscZeroAgent.",
+                agent_type.trim()
+            );
+            Ok(Box::new(RiscZeroAgent))
+        }
+    }
+}
