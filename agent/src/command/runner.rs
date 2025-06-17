@@ -1,18 +1,27 @@
-use std::collections::HashSet;
-use anyhow::Result;
+// use crate::command::registry::get_command_map;
 use crate::tasks::Agent;
-use crate::command::registry::get_command_map;
+use anyhow::{Result, bail};
+use tracing::info;
 
-fn is_command_enabled(key: &str, cli_args: &HashSet<String>) -> bool {
-    cli_args.contains(key) || std::env::var(key).is_ok()
-}
-
-pub fn run_enabled_commands(agent: &dyn Agent, cli_args: &HashSet<String>) -> Result<()> {
-    for (key, action) in get_command_map() {
-        if is_command_enabled(key, cli_args) {
-            println!("Running {}", key);
-            action(agent)?;
-        }
-    }
-    Ok(())
-}
+// pub fn run_selected_command(agent: &dyn Agent, command: &str, input: Vec<u8>) -> Result<()> {
+//     let command_map = get_command_map();
+// 
+//     let selected = command_map
+//         .into_iter()
+//         .find(|(key, _)| key.eq_ignore_ascii_case(command) || std::env::var(key).is_ok());
+// 
+//     match selected {
+//         Some((key, action)) => {
+//             info!("Running command: {}", key);
+//             action(agent, input)
+//         }
+//         None => {
+//             let all_cmds: Vec<&str> = get_command_map().into_iter().map(|(k, _)| k).collect();
+//             bail!(
+//                 "No matching command found for '{}'. Available commands: {:?}",
+//                 command,
+//                 all_cmds
+//             );
+//         }
+//     }
+// }
