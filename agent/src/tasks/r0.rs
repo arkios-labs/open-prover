@@ -1,8 +1,9 @@
-use crate::tasks::{Agent, deserialize_obj, serialize_obj};
+use crate::tasks::{Agent, ProveKeccakRequestLocal, convert, deserialize_obj, serialize_obj};
 use anyhow::Context;
 use anyhow::Result;
 use risc0_zkvm::{
-    ExecutorImpl, ProverOpts, ProverServer, Segment, VerifierContext, get_prover_server,
+    ExecutorImpl, ProveKeccakRequest, ProverOpts, ProverServer, Segment, VerifierContext,
+    get_prover_server,
 };
 use std::{
     rc::Rc,
@@ -52,7 +53,7 @@ impl Agent for RiscZeroAgent {
             .with_context(|| "Failed to lift".to_string())?;
 
         let _serialized = serialize_obj(&lift_receipt).expect("Failed to serialize");
-        
+
         Ok(())
     }
 
@@ -73,8 +74,20 @@ impl Agent for RiscZeroAgent {
         Ok(())
     }
 
-    fn keccak(&self, data: Vec<u8>) -> anyhow::Result<()> {
+    fn keccak(&self, keccak_request: Vec<u8>) -> Result<()> {
         info!("RiscZeroTask::keccak()");
+
+        let prove_keccak_request_local: ProveKeccakRequestLocal =
+            deserialize_obj(&keccak_request).context("Failed to deserialize keccak request")?;
+
+        let prove_keccak_request = convert(prove_keccak_request_local);
+
+        let keccak_receipt = self
+            .prover
+            .as_ref()
+            .context("Mssing prover from keccak task")?
+            .prove_keccak(&prove_keccak_request);
+
         Ok(())
     }
 
