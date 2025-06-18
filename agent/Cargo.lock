@@ -44,6 +44,7 @@ dependencies = [
  "memmap2",
  "risc0-zkvm",
  "serde",
+ "serde_json",
  "tracing",
  "tracing-subscriber 0.3.19",
 ]

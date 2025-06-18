@@ -36,8 +36,8 @@ impl Agent for RiscZeroAgent {
         Ok(())
     }
 
-    fn prove(&self, segment_vec: Vec<u8>) -> Result<()> {
-        let segment = deserialize_obj(&segment_vec).context("Failed to deserialize segment")?;
+    fn prove(&self, segment_bytes: Vec<u8>) -> Result<Vec<u8>> {
+        let segment = deserialize_obj(&segment_bytes).context("Failed to deserialize segment")?;
         let segment_receipt = self
             .prover
             .as_ref()
@@ -52,16 +52,17 @@ impl Agent for RiscZeroAgent {
             .lift(&segment_receipt)
             .with_context(|| "Failed to lift".to_string())?;
 
-        let _serialized = serialize_obj(&lift_receipt).expect("Failed to serialize");
+        let serialized = serialize_obj(&lift_receipt).expect("Failed to serialize");
 
-        Ok(())
+        Ok(serialized)
     }
 
-    fn join(&self, left: Vec<u8>, right: Vec<u8>) -> Result<()> {
+    fn join(&self, left_receipt_bytes: Vec<u8>, right_receipt_bytes: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::join()");
-        let left_receipt = deserialize_obj(&left).context("Failed to deserialize left receipt")?;
+        let left_receipt =
+            deserialize_obj(&left_receipt_bytes).context("Failed to deserialize left receipt")?;
         let right_receipt =
-            deserialize_obj(&right).context("Failed to deserialize right receipt")?;
+            deserialize_obj(&right_receipt_bytes).context("Failed to deserialize right receipt")?;
 
         let joined = self
             .prover
@@ -69,17 +70,18 @@ impl Agent for RiscZeroAgent {
             .context("Missing prover from join task")?
             .join(&left_receipt, &right_receipt)?;
 
-        let join_result = serialize_obj(&joined).expect("Failed to serialize the segment");
+        let serialized = serialize_obj(&joined).expect("Failed to serialize");
 
-        Ok(())
+        Ok(serialized)
     }
 
-    fn keccak(&self, keccak_request: Vec<u8>) -> Result<()> {
+    fn keccak(&self, keccak_request: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::keccak()");
 
         let prove_keccak_request_local: ProveKeccakRequestLocal =
             deserialize_obj(&keccak_request).context("Failed to deserialize keccak request")?;
 
+        // Conversion is required because the library's `ProveKeccakRequest` type doesn't support deserialization
         let prove_keccak_request = convert(prove_keccak_request_local);
 
         let keccak_receipt = self
@@ -88,25 +90,43 @@ impl Agent for RiscZeroAgent {
             .context("Mssing prover from keccak task")?
             .prove_keccak(&prove_keccak_request);
 
-        Ok(())
+        let serialized = serialize_obj(&keccak_receipt?).expect("Failed to serialize");
+        Ok(serialized)
     }
 
-    fn union(&self, data: Vec<u8>) -> anyhow::Result<()> {
+    fn union(&self, left_receipt_bytes: Vec<u8>, right_receipt_bytes: Vec<u8>) ->Result<Vec<u8>> {
         info!("RiscZeroTask::union()");
-        Ok(())
+
+        let left_receipt =
+            deserialize_obj(&left_receipt_bytes).context("Failed to deserialize left receipt")?;
+
+        let right_receipt =
+            deserialize_obj(&right_receipt_bytes).context("Failed to deserialize right receipt")?;
+
+        let unioned = self
+            .prover
+            .as_ref()
+            .context("Missing prover from union prove task")?
+            .union(&left_receipt, &right_receipt)
+            .context("Failed to union on left/right receipt")?
+            .into_unknown();
+
+        let serialized = serialize_obj(&unioned).context("Failed to serialize union receipt")?;
+
+        Ok(serialized)
     }
 
-    fn finalize(&self, data: Vec<u8>) -> anyhow::Result<()> {
+    fn finalize(&self, data: Vec<u8>) -> Result<()> {
         info!("RiscZeroTask::finalize()");
         Ok(())
     }
 
-    fn stark2snark(&self, data: Vec<u8>) -> anyhow::Result<()> {
+    fn stark2snark(&self, data: Vec<u8>) -> Result<()> {
         info!("RiscZeroTask::stark2snark()");
         Ok(())
     }
 
-    fn resolve(&self, data: Vec<u8>) -> anyhow::Result<()> {
+    fn resolve(&self, data: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::resolve()");
         Ok(())
     }
