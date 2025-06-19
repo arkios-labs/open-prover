@@ -2,12 +2,50 @@ pub mod factory;
 pub mod r0;
 
 use anyhow::{Context, Result};
-use bincode::de;
-use risc0_zkvm::{Digest, ProveKeccakRequest};
+use risc0_zkvm::{Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, Segment};
 use serde::de::{DeserializeOwned, Error, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::fmt;
 use std::fmt::Write;
+
+pub type KeccakState = [u64; 25];
+
+#[derive(Deserialize, Serialize)]
+pub struct ProveKeccakRequestLocal {
+    pub claim_digest: Digest,
+    pub po2: usize,
+    pub control_root: Digest,
+    pub input: Vec<KeccakState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SerializableKeccakRequest {
+    /// The digest of the claim that this keccak input is expected to produce.
+    pub claim_digest: Digest,
+
+    /// The requested size of the keccak proof, in powers of 2.
+    pub po2: usize,
+
+    /// The control root which identifies a particular keccak circuit revision.
+    pub control_root: Digest,
+
+    /// Input transcript to provide to the keccak circuit.
+    pub input: Vec<KeccakState>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SerializableZkrRequest {
+    pub claim_digest: String,
+    pub control_id: String,
+    pub input_len: usize,
+}
+#[derive(Serialize, Deserialize)]
+pub struct SerializableSession {
+    pub segments: Vec<Segment>,
+    pub journal: Option<Journal>,
+    pub assumptions: Vec<(Assumption, AssumptionReceipt)>,
+    pub pending_zkrs: Vec<SerializableZkrRequest>,
+    pub pending_keccaks: Vec<SerializableKeccakRequest>,
+}
 
 pub trait Agent {
     fn execute(&self, data: Vec<u8>) -> Result<()>;
@@ -17,28 +55,23 @@ pub trait Agent {
     fn union(&self, left: Vec<u8>, right: Vec<u8>) -> Result<Vec<u8>>;
     fn finalize(&self, data: Vec<u8>) -> Result<()>;
     fn stark2snark(&self, data: Vec<u8>) -> Result<()>;
-    fn resolve(&self, data: Vec<u8>) -> Result<Vec<u8>>;
+    fn resolve(
+        &self,
+        assumptions_bytes: Vec<u8>,
+        root_receipt_bytes: Vec<u8>,
+        union_root_receipt_bytes: Vec<u8>,
+    ) -> Result<Vec<u8>>;
 }
 
-pub(crate) fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
+pub fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
     let json_str = std::str::from_utf8(encoded)?;
     let decoded = serde_json::from_str(json_str)?;
     Ok(decoded)
 }
 
-pub(crate) fn serialize_obj<T: Serialize>(item: &T) -> Result<Vec<u8>> {
+pub fn serialize_obj<T: Serialize>(item: &T) -> Result<Vec<u8>> {
     let json_str = serde_json::to_string(item)?;
     Ok(json_str.into_bytes())
-}
-
-pub type KeccakState = [u64; 25];
-
-#[derive(Deserialize)]
-struct ProveKeccakRequestLocal {
-    claim_digest: [u8; 32],
-    po2: usize,
-    control_root: [u8; 32],
-    input: Vec<KeccakState>,
 }
 
 fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {

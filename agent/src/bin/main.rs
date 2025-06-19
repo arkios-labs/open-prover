@@ -1,8 +1,14 @@
 use agent::io::input::env::EnvProvider;
-use agent::tasks::Agent;
 use agent::tasks::factory::get_agent;
+use agent::tasks::{
+    Agent, ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
+};
 use anyhow::Result;
+use risc0_zkvm::{SuccinctReceipt, Unknown};
 use std::{env, fs};
+use std::fs::File;
+use std::io::Write;
+use tracing::info;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -13,19 +19,48 @@ fn main() -> Result<()> {
         env::set_var("AGENT_TYPE", "invalid");
     }
 
+    // TODO: Get input with stdin
     let input = Box::new(EnvProvider {
         key: "AGENT_TYPE".to_string(),
     });
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
+    let mut path = env::current_dir()?;
+    path.push("session_4_segments.json");
+    info!("Reading JSON session file from: {}", path.display());
+
+    let json = fs::read_to_string(&path)?;
+    let session: SerializableSession = serde_json::from_str(&json)?;
+
+    let mut results_json = Vec::new();
+
+    for (i, keccak_req) in session.pending_keccaks.iter().enumerate() {
+        let local_req = ProveKeccakRequestLocal {
+            claim_digest: keccak_req.claim_digest,
+            po2: keccak_req.po2,
+            control_root: keccak_req.control_root,
+            input: keccak_req.input.clone(),
+        };
+
+        let bytes = serialize_obj(&local_req)?;
+        info!("Keccak test start");
+        let result = agent_ref.keccak(bytes)?;
+        let keccak_result: SuccinctReceipt<Unknown> = deserialize_obj(&result)?;
+        results_json.push(keccak_result);
+    }
+    let json_data = serde_json::to_string_pretty(&results_json)?;
+    fs::write("pending_keccaks.json", json_data)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent::tasks::SerializableSession;
     use std::{env, fs};
+    use std::io::BufReader;
+    use serde_json::{from_reader, to_string_pretty};
     use tracing::{debug, info};
 
     #[test]
@@ -44,7 +79,7 @@ mod tests {
         let agent = get_agent(input)?;
         let agent_ref: &dyn Agent = agent.as_ref();
         let mut path = env::current_dir()?;
-        path.push("segment");
+        path.push("segment.json");
 
         info!("Reading from: {}", path.display());
         let bytes = fs::read(&path)?;
@@ -54,4 +89,47 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_deserialize_session_from_json() -> Result<()> {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
+
+        let mut path = env::current_dir()?;
+        path.push("session_4_segments.json");
+
+        info!("Reading JSON session file from: {}", path.display());
+
+        let json = fs::read_to_string(&path)?;
+        let session: SerializableSession = serde_json::from_str(&json)?;
+
+        let segment_count = session.segments.len();
+
+        assert_eq!(
+            segment_count, 4,
+            "Expected 4 segments, got {}",
+            segment_count
+        );
+
+        Ok(())
+    }
+
+    // 테스트
+    #[test]
+    fn test_json_transform_and_write() -> Result<(), Box<dyn std::error::Error>> {
+
+        // 1. JSON 읽기 및 역직렬화
+        let file = File::open("keccak_results.json")?;
+        let reader = BufReader::new(file);
+        let results: Vec<SuccinctReceipt<Unknown>> = from_reader(reader)?;
+
+        // 3. JSON 직렬화 및 파일로 저장
+        let json = to_string_pretty(&results)?;
+        fs::write("keccak_results2.json", json)?;
+
+        Ok(())
+    }
+
+
 }
