@@ -1,11 +1,10 @@
 pub mod factory;
 pub mod r0;
 
-use anyhow::{Context, Result};
+use anyhow::{ Result};
 use risc0_zkvm::{Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, Segment};
-use serde::de::{DeserializeOwned, Error, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
-use std::fmt::Write;
+use serde::de::{DeserializeOwned};
+use serde::{Deserialize, Serialize};
 
 pub type KeccakState = [u64; 25];
 
@@ -53,7 +52,7 @@ pub trait Agent {
     fn join(&self, left: Vec<u8>, right: Vec<u8>) -> Result<Vec<u8>>;
     fn keccak(&self, prove_keccak_request: Vec<u8>) -> Result<Vec<u8>>;
     fn union(&self, left: Vec<u8>, right: Vec<u8>) -> Result<Vec<u8>>;
-    fn finalize(&self, data: Vec<u8>) -> Result<()>;
+    fn finalize(&self, root_receipt: Vec<u8>, journal: Vec<u8>,image_id: Digest) -> Result<()>;
     fn stark2snark(&self, data: Vec<u8>) -> Result<()>;
     fn resolve(
         &self,
@@ -62,6 +61,7 @@ pub trait Agent {
         union_root_receipt_bytes: Vec<u8>,
     ) -> Result<Vec<u8>>;
 }
+
 
 pub fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
     let json_str = std::str::from_utf8(encoded)?;
