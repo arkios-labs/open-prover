@@ -15,14 +15,6 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
-    // rayon::ThreadPoolBuilder::new()
-    //     .stack_size(2 * 1024 * 1024) // 최소 2MB
-    //     .num_threads(4)
-    //     .build_global()
-    //     .unwrap();
-    // unsafe {
-    //     env::set_var("AGENT_TYPE", "invalid");
-    // }
 
     // TODO: Get input with stdin
     let input = Box::new(EnvProvider {
@@ -84,14 +76,11 @@ mod tests {
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::INFO)
             .init();
-
-        unsafe {
-            env::set_var("AGENT_TYPE", "invalid");
-        }
-
+        
         let input = Box::new(EnvProvider {
             key: "AGENT_TYPE".to_string(),
         });
+        
         let agent = get_agent(input)?;
         let agent_ref: &dyn Agent = agent.as_ref();
         let mut path = env::current_dir()?.join("metadata/segment.json");
@@ -111,7 +100,7 @@ mod tests {
             .with_max_level(tracing::Level::INFO)
             .init();
 
-        let mut path = env::current_dir()?.join("session_4_segments.json");
+        let mut path = env::current_dir()?.join("metadata/session_4_segments.json");
 
         info!("Reading JSON session file from: {}", path.display());
 

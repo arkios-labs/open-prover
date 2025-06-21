@@ -1,15 +1,15 @@
 use crate::io::input::env::EnvProvider;
 use crate::tasks::factory::get_agent;
 use crate::tasks::{
-    convert, deserialize_obj, serialize_obj, Agent, ProveKeccakRequestLocal, SerializableSession,
+    Agent, ProveKeccakRequestLocal, SerializableSession, convert, deserialize_obj, serialize_obj,
 };
-use anyhow::{anyhow, Result};
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
+use anyhow::{Result, anyhow};
 use hex::FromHex;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
-    get_prover_server, AssumptionReceipt, Digest, InnerAssumptionReceipt, InnerReceipt, ProverOpts,
-    ProverServer, Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext,
+    AssumptionReceipt, Digest, InnerAssumptionReceipt, InnerReceipt, ProverOpts, ProverServer,
+    Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
 };
 use std::collections::HashMap;
 use std::time::Instant;
@@ -202,7 +202,7 @@ impl Agent for RiscZeroAgent {
                         let union_receipt: SuccinctReceipt<Unknown> = deserialize_obj(
                             &union_root_receipt_bytes,
                         )
-                            .context("Failed to deserialize to SuccinctReceipt<Unknown> type")?;
+                        .context("Failed to deserialize to SuccinctReceipt<Unknown> type")?;
                         union_claim = union_receipt.claim.digest().to_string();
 
                         info!("Resolving union claim digest: {union_claim}");
@@ -252,6 +252,10 @@ impl Agent for RiscZeroAgent {
 
 #[test]
 fn test_keccak_on_pending_keccaks() -> Result<()> {
+    use anyhow::Context;
+    use std::{env, fs, path::PathBuf, time::Instant};
+    use tracing::info;
+
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
@@ -267,17 +271,18 @@ fn test_keccak_on_pending_keccaks() -> Result<()> {
     let agent_ref: &dyn Agent = agent.as_ref();
 
     let path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+    info!("Loading session from: {:?}", path);
 
-    info!("path: {:?}", path);
     let json = fs::read_to_string(&path)?;
     let session: SerializableSession = serde_json::from_str(&json)?;
 
-    assert!(
-        !session.pending_keccaks.is_empty(),
-        "No pending keccaks found in session"
-    );
+    let keccak_count = session.pending_keccaks.len();
+    assert!(keccak_count > 0, "No pending keccaks found in session");
 
-    let mut all_receipts = Vec::new();
+    info!("Found {} pending keccak inputs", keccak_count);
+
+    let mut all_receipts = Vec::with_capacity(keccak_count);
+    let start = Instant::now();
 
     for (i, keccak_req) in session.pending_keccaks.iter().enumerate() {
         let local_req = ProveKeccakRequestLocal {
@@ -296,30 +301,34 @@ fn test_keccak_on_pending_keccaks() -> Result<()> {
         };
 
         let bytes = serialize_obj(&local_req)?;
-        info!("Keccak test [{}] start", i);
+        info!("Proving keccak [{} / {}]...", i + 1, keccak_count);
+
         let result = agent_ref.keccak(bytes)?;
+        let receipt: SuccinctReceipt<Unknown> =
+            deserialize_obj(&result).context("Failed to deserialize keccak receipt")?;
 
-        let keccak_receipt: SuccinctReceipt<Unknown> =
-            deserialize_obj(&result).context("Failed to deserialize keccak")?;
-
-        all_receipts.push(keccak_receipt);
-
-        info!("Keccak test [{}] result len: {}", i, result.len());
+        info!("Keccak [{}] result size: {}", i, result.len());
+        all_receipts.push(receipt);
     }
 
+    let file_path = PathBuf::from("metadata/keccak/keccak_receipts.json");
     let receipts_json = serde_json::to_string_pretty(&all_receipts)?;
-    let file_path = std::path::PathBuf::from("metadata/keccak/keccak_receipts.json");
     fs::write(&file_path, receipts_json)
         .with_context(|| format!("Failed to write receipts to {:?}", file_path))?;
+
+    info!(
+        "All {} keccak receipts written to {:?} in {:?}",
+        keccak_count,
+        file_path,
+        start.elapsed()
+    );
 
     Ok(())
 }
 
 #[test]
-fn test_union_on_keccaks_ordered() -> Result<()> {
-    use std::env;
-    use std::fs;
-    use std::time::Instant;
+fn test_union_on_keccaks_tree() -> Result<()> {
+    use std::{collections::VecDeque, env, fs, time::Instant};
     use tracing::info;
 
     tracing_subscriber::fmt()
@@ -337,94 +346,68 @@ fn test_union_on_keccaks_ordered() -> Result<()> {
     let agent_ref: &dyn Agent = agent.as_ref();
 
     let path = env::current_dir()?.join("metadata/keccak/keccak_receipts.json");
-    info!("path: {:?}", path);
+    info!("Loading keccak receipts from: {:?}", path);
+
     let json = fs::read_to_string(&path)?;
     let keccak_receipts: Vec<SuccinctReceipt<Unknown>> = serde_json::from_str(&json)?;
+    let receipt_count = keccak_receipts.len();
+    info!("Loaded {} keccak receipts", receipt_count);
 
-    let serialized = |i: usize| serialize_obj(&keccak_receipts[i]).expect("Serialize failed");
-
-    let start = Instant::now();
-
-    let union1 = agent_ref
-        .union(serialized(0), serialized(1))
-        .expect("Union 0-1 failed");
-    let union2 = agent_ref
-        .union(serialized(2), serialized(3))
-        .expect("Union 2-3 failed");
-    let union3 = agent_ref
-        .union(union1.clone(), union2.clone())
-        .expect("Union1-2 failed");
-    let final_union = agent_ref
-        .union(union3.clone(), serialized(4))
-        .expect("Final union failed");
-
-    let elapsed = start.elapsed();
-
-    info!("Final unioned result size: {}", final_union.len());
-    info!("Union elapsed: {:?} with receipts count: 6", elapsed);
-
-    let union_receipt: SuccinctReceipt<Unknown> = deserialize_obj(&final_union)?;
-    let union_json = serde_json::to_string_pretty(&union_receipt)?;
-    fs::write("metadata/keccak/unioned_receipt.json", union_json)?;
-
-    Ok(())
-}
-
-#[test]
-fn test_union_on_keccaks() -> Result<()> {
-    use std::collections::VecDeque;
-
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    unsafe {
-        env::set_var("AGENT_TYPE", "invalid");
-    }
-
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
-    let agent = get_agent(input)?;
-    let agent_ref: &dyn Agent = agent.as_ref();
-
-    let path = env::current_dir()?.join("metadata/keccak/keccak_receipts.json");
-    info!("path: {:?}", path);
-    let json = fs::read_to_string(&path)?;
-
-    let keccak_receipts: Vec<SuccinctReceipt<Unknown>> = serde_json::from_str(&json)?;
-    let keccak_receipts_count = keccak_receipts.len();
-
-    let serialized_receipts: Vec<Vec<u8>> = keccak_receipts
+    let mut queue: Vec<Vec<Vec<u8>>> = keccak_receipts
         .into_iter()
-        .map(|r| serialize_obj(&r).unwrap())
+        .map(|r| vec![serialize_obj(&r).expect("Failed to serialize receipt")])
         .collect();
 
-    let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
     let start = Instant::now();
 
     while queue.len() > 1 {
-        let left = queue.pop_front().unwrap();
-        let right = queue.pop_front().unwrap();
+        let mut next_level = Vec::with_capacity((queue.len() + 1) / 2);
+        let mut i = 0;
 
-        let union = agent_ref.union(left, right).expect("Union failed");
+        while i + 1 < queue.len() {
+            let left = queue[i].clone();
+            let right = queue[i + 1].clone();
+            let left_serialized = left.last().unwrap();
+            let right_serialized = right.last().unwrap();
 
-        info!("Union successful, resulting size: {}", union.len());
-        queue.push_back(union);
+            let union = agent_ref
+                .union(left_serialized.clone(), right_serialized.clone())
+                .expect("Union failed");
+
+            let mut new_branch = left;
+            new_branch.extend(right);
+            new_branch.push(union.clone());
+
+            info!("Union [{} + {}] size: {}", i, i + 1, union.len());
+            next_level.push(new_branch);
+
+            i += 2;
+        }
+
+        if i < queue.len() {
+            next_level.push(queue[i].clone());
+        }
+
+        queue = next_level;
     }
 
-    let final_result = queue.pop_front().unwrap();
+    let final_branch = queue.pop().unwrap();
+    let final_result = final_branch.last().unwrap();
     let elapsed = start.elapsed();
 
-    info!("Final unioned result size: {}", final_result.len());
     info!(
-        "Union elapsed: {:?} with receipts count: {:?}",
-        elapsed, keccak_receipts_count
+        "Union complete: final result size: {}, elapsed: {:?}, total input receipts: {}",
+        final_result.len(),
+        elapsed,
+        receipt_count
     );
-    let union_receipt: SuccinctReceipt<Unknown> = deserialize_obj(&final_result)?;
 
-    let union_receipt = serde_json::to_string_pretty(&union_receipt)?;
-    fs::write("metadata/keccak/unioned_receipt.json", union_receipt)?;
+    let union_receipt: SuccinctReceipt<Unknown> = deserialize_obj(final_result)?;
+    let union_json = serde_json::to_string_pretty(&union_receipt)?;
+    let output_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
+    fs::write(&output_path, union_json)?;
+
+    info!("Unioned receipt written to {:?}", output_path);
 
     Ok(())
 }
@@ -432,9 +415,7 @@ fn test_union_on_keccaks() -> Result<()> {
 #[test]
 fn test_prove_all_segments() -> Result<()> {
     use anyhow::Context;
-    use std::env;
-    use std::fs;
-    use std::time::Instant;
+    use std::{env, fs, time::Instant};
     use tracing::info;
 
     tracing_subscriber::fmt()
@@ -448,27 +429,30 @@ fn test_prove_all_segments() -> Result<()> {
     let input = Box::new(EnvProvider {
         key: "AGENT_TYPE".to_string(),
     });
-
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
     let path = env::current_dir()?.join("metadata/session/session_4_segments.json");
-    info!("path: {:?}", path);
+    info!("Loading session from: {:?}", path);
 
     let json = fs::read_to_string(&path)?;
     let session: SerializableSession = serde_json::from_str(&json)?;
+    let segment_count = session.segments.len();
+    assert!(segment_count > 0, "No segments found in session");
 
-    assert!(!session.segments.is_empty(), "No segments found in session");
-
-    let mut all_receipts = Vec::new();
+    info!(
+        "Found {} segments. Starting proof generation...",
+        segment_count
+    );
+    let mut all_receipts = Vec::with_capacity(segment_count);
     let start = Instant::now();
 
     for (i, segment) in session.segments.iter().enumerate() {
-        info!("Proving segment [{}]", i);
+        info!("Proving segment [{}/{}]", i + 1, segment_count);
         let bytes = serialize_obj(segment)?;
         let lifted_bytes = agent_ref.prove(bytes)?;
 
-        info!("Lifted segment [{}] result size: {}", i, lifted_bytes.len());
+        info!("Segment [{}] proof size: {}", i, lifted_bytes.len());
 
         let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
             .context(format!("Failed to deserialize receipt for segment {}", i))?;
@@ -476,12 +460,14 @@ fn test_prove_all_segments() -> Result<()> {
         all_receipts.push(lifted_receipt);
     }
 
+    let output_path = env::current_dir()?.join("metadata/lifted_receipts.json");
     let output_json = serde_json::to_string_pretty(&all_receipts)?;
-    fs::write("metadata/lifted_receipts.json", output_json)
-        .context("Failed to write lifted receipts JSON")?;
+    fs::write(&output_path, output_json).context("Failed to write lifted receipts JSON")?;
 
     info!(
-        "All segment receipts written successfully in {:?}",
+        "All {} segment receipts written to {:?} in {:?}",
+        segment_count,
+        output_path,
         start.elapsed()
     );
 
@@ -490,7 +476,8 @@ fn test_prove_all_segments() -> Result<()> {
 
 #[test]
 fn test_join_on_lifted_receipts() -> Result<()> {
-    use std::collections::VecDeque;
+    use std::{collections::VecDeque, env, fs, time::Instant};
+    use tracing::info;
 
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -507,11 +494,12 @@ fn test_join_on_lifted_receipts() -> Result<()> {
     let agent_ref: &dyn Agent = agent.as_ref();
 
     let path = env::current_dir()?.join("metadata/lifted_receipts.json");
-    info!("path: {:?}", path);
+    info!("Loading lifted receipts from: {:?}", path);
     let json = fs::read_to_string(&path)?;
 
     let lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> = serde_json::from_str(&json)?;
-    let lifted_receipts_count = lifted_receipts.len();
+    let receipt_count = lifted_receipts.len();
+    info!("Loaded {} lifted receipts", receipt_count);
 
     let serialized_receipts: Vec<Vec<u8>> = lifted_receipts
         .into_iter()
@@ -526,32 +514,36 @@ fn test_join_on_lifted_receipts() -> Result<()> {
         let right = queue.pop_front().unwrap();
 
         let joined = agent_ref.join(left, right).expect("Join failed");
-
-        info!("Join successful, resulting size: {}", joined.len());
+        info!(
+            "Join successful (size: {}) | Remaining queue: {}",
+            joined.len(),
+            queue.len()
+        );
         queue.push_back(joined);
     }
 
     let final_result = queue.pop_front().unwrap();
     let elapsed = start.elapsed();
 
-    info!("Final joined result size: {}", final_result.len());
     info!(
-        "Join elapsed: {:?} with receipts count: {:?}",
-        elapsed, lifted_receipts_count
+        "Join complete in {:?} | Final joined result size: {} | Total input receipts: {}",
+        elapsed,
+        final_result.len(),
+        receipt_count
     );
-    let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&final_result)?;
 
-    let root_receipt = serde_json::to_string_pretty(&root_receipt)?;
-    fs::write("metadata/root_receipt.json", root_receipt)?;
+    let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&final_result)?;
+    let root_json = serde_json::to_string_pretty(&root_receipt)?;
+    fs::write("metadata/root_receipt.json", root_json)?;
+    info!("Root receipt written to metadata/root_receipt.json");
 
     Ok(())
 }
 
 #[test]
 fn test_resolve_on_session() -> Result<()> {
-    use std::env;
-    use std::fs;
     use std::time::Instant;
+    use std::{env, fs};
     use tracing::info;
 
     tracing_subscriber::fmt()
@@ -569,60 +561,72 @@ fn test_resolve_on_session() -> Result<()> {
     let agent_ref: &dyn Agent = agent.as_ref();
 
     let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
-    info!("Reading session from {:?}", session_path);
+    info!("Loading session from: {:?}", session_path);
     let session_json = fs::read_to_string(&session_path)?;
     let session: SerializableSession = serde_json::from_str(&session_json)?;
 
     let assumption_receipts: Vec<SuccinctReceipt<Unknown>> = session
         .assumptions
         .iter()
-        .filter_map(|(_, assumption_receipt)| match assumption_receipt {
-            AssumptionReceipt::Proven(InnerAssumptionReceipt::Succinct(receipt)) => {
-                Some(receipt.clone())
-            }
+        .filter_map(|(_, receipt)| match receipt {
+            AssumptionReceipt::Proven(InnerAssumptionReceipt::Succinct(r)) => Some(r.clone()),
             _ => None,
         })
         .collect();
+    info!("Loaded {} assumption receipts", assumption_receipts.len());
+
     let assumptions_bytes = serialize_obj(&assumption_receipts)?;
+    info!(
+        "Serialized assumption receipts, size: {}",
+        assumptions_bytes.len()
+    );
 
     let root_path = env::current_dir()?.join("metadata/root_receipt.json");
+    info!("Loading root receipt from: {:?}", root_path);
     let root_json = fs::read_to_string(&root_path)?;
     let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
     let root_receipt_bytes = serialize_obj(&root_receipt)?;
+    info!(
+        "Root receipt serialized, size: {}",
+        root_receipt_bytes.len()
+    );
 
     let union_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
+    info!("Loading unioned receipt from: {:?}", union_path);
     let union_json = fs::read_to_string(&union_path)?;
     let union_receipt: SuccinctReceipt<Unknown> = serde_json::from_str(&union_json)?;
     let union_root_receipt_bytes = serialize_obj(&union_receipt)?;
+    info!(
+        "Unioned receipt serialized, size: {}",
+        union_root_receipt_bytes.len()
+    );
 
-    let start = Instant::now();
-
+    info!("Calling resolve()...");
+    let start_resolve = Instant::now();
     let resolved = agent_ref.resolve(
         assumptions_bytes,
         root_receipt_bytes,
         union_root_receipt_bytes,
     )?;
-    info!("Resolve time elapsed: {:?}", start.elapsed());
+    info!("Resolve completed in {:?}", start_resolve.elapsed());
 
     let resolved_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&resolved)?;
-
-    let resolved_receipt = serde_json::to_string_pretty(&resolved_receipt)?;
-    fs::write("metadata/resolved_receipt.json", resolved_receipt)?;
+    let resolved_json = serde_json::to_string_pretty(&resolved_receipt)?;
+    fs::write("metadata/resolved_receipt.json", resolved_json)?;
+    info!("Resolved receipt written to metadata/resolved_receipt.json");
 
     Ok(())
 }
 
 #[test]
 fn test_finalize_on_session() -> Result<()> {
+    use std::time::Instant;
     use std::{env, fs};
     use tracing::info;
 
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
-    unsafe {
-        env::set_var("AGENT_TYPE", "invalid");
-    }
 
     let input = Box::new(EnvProvider {
         key: "AGENT_TYPE".to_string(),
@@ -631,11 +635,17 @@ fn test_finalize_on_session() -> Result<()> {
     let agent_ref: &dyn Agent = agent.as_ref();
 
     let root_path = env::current_dir()?.join("metadata/resolved_receipt.json");
+    info!("Loading resolved receipt from: {:?}", root_path);
     let root_json = fs::read_to_string(&root_path)?;
     let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
     let root_receipt_bytes = serialize_obj(&root_receipt)?;
+    info!(
+        "Resolved receipt loaded and serialized, size: {}",
+        root_receipt_bytes.len()
+    );
 
     let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+    info!("Loading session from: {:?}", session_path);
     let session_json = fs::read_to_string(&session_path)?;
     let session: SerializableSession = serde_json::from_str(&session_json)?;
 
@@ -644,14 +654,16 @@ fn test_finalize_on_session() -> Result<()> {
         .as_ref()
         .map(|j| j.bytes.clone())
         .ok_or_else(|| anyhow!("journal is missing"))?;
+    info!("Journal loaded, size: {}", journal_bytes.len());
 
     let image_id =
-        read_image_id("3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a");
+        read_image_id("3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a")?;
+    info!("Image ID loaded: {}", image_id.to_string());
 
-    info!("Calling finalize()...");
-    agent_ref.finalize(root_receipt_bytes, journal_bytes, image_id?)?;
+    let start_finalize = Instant::now();
+    agent_ref.finalize(root_receipt_bytes, journal_bytes, image_id)?;
+    info!("Finalize succeeded in {:?}", start_finalize.elapsed());
 
-    info!("Finalize succeeded.");
     Ok(())
 }
 
