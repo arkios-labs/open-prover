@@ -19,3 +19,13 @@ compile_commands.json
 .vercel
 node_modules
 *.code-workspace
+./agent/prover
+./agent/stark_verify
+./agent/stark_verify.cs
+./agent/stark_verify.dat
+./agent/stark_verify_final.pk.dmp
+
+./agent/python/__pycache__/
+./agent/python/tasks/__pycache__/
+./agent/python/*.py[cod]
+./agent/python/*$py.class

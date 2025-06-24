@@ -1,9 +1,12 @@
 pub mod factory;
 pub mod r0;
 
-use anyhow::{ Result};
-use risc0_zkvm::{Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, Segment};
-use serde::de::{DeserializeOwned};
+use anyhow::Result;
+use risc0_zkvm::{
+    Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, ReceiptClaim, Segment,
+    SuccinctReceipt, Unknown,
+};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 pub type KeccakState = [u64; 25];
@@ -46,22 +49,30 @@ pub struct SerializableSession {
     pub pending_keccaks: Vec<SerializableKeccakRequest>,
 }
 
-pub trait Agent {
-    fn execute(&self, data: Vec<u8>) -> Result<()>;
-    fn prove(&self, data: Vec<u8>) -> Result<Vec<u8>>;
-    fn join(&self, left: Vec<u8>, right: Vec<u8>) -> Result<Vec<u8>>;
-    fn keccak(&self, prove_keccak_request: Vec<u8>) -> Result<Vec<u8>>;
-    fn union(&self, left: Vec<u8>, right: Vec<u8>) -> Result<Vec<u8>>;
-    fn finalize(&self, root_receipt: Vec<u8>, journal: Vec<u8>,image_id: Digest) -> Result<()>;
-    fn stark2snark(&self, data: Vec<u8>) -> Result<()>;
-    fn resolve(
-        &self,
-        assumptions_bytes: Vec<u8>,
-        root_receipt_bytes: Vec<u8>,
-        union_root_receipt_bytes: Vec<u8>,
-    ) -> Result<Vec<u8>>;
+#[derive(Serialize, Deserialize)]
+pub struct ResolveInput {
+    pub(crate) root: SuccinctReceipt<ReceiptClaim>,
+    pub(crate) union: Option<SuccinctReceipt<Unknown>>,
+    pub(crate) assumptions: Vec<(Assumption, AssumptionReceipt)>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct FinalizeInput {
+    pub(crate) root: SuccinctReceipt<ReceiptClaim>,
+    pub(crate) journal: Vec<u8>,
+    pub(crate) image_id: String,
+}
+
+pub trait Agent {
+    fn execute(&self, data: Vec<u8>) -> Result<Vec<u8>>;
+    fn prove(&self, data: Vec<u8>) -> Result<Vec<u8>>;
+    fn join(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn keccak(&self, prove_keccak_request: Vec<u8>) -> Result<Vec<u8>>;
+    fn union(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn finalize(&self, input: Vec<u8>) -> Result<(Vec<u8>)>;
+    fn stark2snark(&self, data: Vec<u8>) -> Result<Vec<u8>>;
+}
 
 pub fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
     let json_str = std::str::from_utf8(encoded)?;
