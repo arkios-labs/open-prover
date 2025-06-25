@@ -205,3 +205,12 @@ def convert_keccak_request_to_local(keccak_req: SerializableKeccakRequest) -> Pr
         control_root=keccak_req.control_root,
         input=keccak_req.input
     )
+
+def clean_none(obj):
+    """Recursively remove None values from dict/list"""
+    if isinstance(obj, dict):
+        return {k: clean_none(v) for k, v in obj.items() if v is not None}
+    elif isinstance(obj, list):
+        return [clean_none(x) for x in obj if x is not None]
+    else:
+        return obj
