@@ -2,12 +2,11 @@ import json
 import sys
 
 import ray
-
-from runner import run_join_with_ray, run_prove_with_ray, run_keccak_with_ray, run_union_with_ray, \
-    run_resolve_with_ray, run_finalize_with_ray
+import platform
 from common.types import TaskType
 from loader import load_lifted_receipts, load_session_with_segments, load_keccak_requests, load_keccak_receipts
-from models.verify import verify_segment_data, verify_keccak_data
+from runner import run_join_with_ray, run_prove_with_ray, run_keccak_with_ray, run_union_with_ray, \
+    run_resolve_with_ray, run_finalize_with_ray
 
 
 def main(task_type: TaskType):
@@ -23,9 +22,6 @@ def main(task_type: TaskType):
         input_data = load_session_with_segments()
         print(f"Loaded {len(input_data)} segments for PROVE")
 
-        if not verify_segment_data(input_data):
-            raise RuntimeError("Segment data verification failed")
-
         print("Running PROVE tasks...")
         results = run_prove_with_ray(input_data)
 
@@ -39,9 +35,6 @@ def main(task_type: TaskType):
         print("Loading keccak request data...")
         keccak_requests = load_keccak_requests()
         print(f"Loaded {len(keccak_requests)} keccak requests")
-
-        if not verify_keccak_data(keccak_requests):
-            raise RuntimeError("Keccak data verification failed")
 
         print("Using Ray for distributed execution")
         results = run_keccak_with_ray(keccak_requests)

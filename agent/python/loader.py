@@ -1,21 +1,12 @@
 import json
 from typing import List
-from models.model import LiftedReceipt, SerializableKeccakRequest, ProveKeccakRequestLocal, KeccakReceipt, ResolveInput
+
+from models.model import LiftedReceipt, SerializableKeccakRequest, KeccakReceipt, convert_keccak_request_to_local
 
 
 def load_session() -> dict:
     with open("../metadata/session/session_4_segments.json", "r") as f:
         return json.load(f)
-
-
-def convert_keccak_request_to_local(keccak_req: SerializableKeccakRequest) -> ProveKeccakRequestLocal:
-    return ProveKeccakRequestLocal(
-        claim_digest=keccak_req.claim_digest,
-        po2=keccak_req.po2,
-        control_root=keccak_req.control_root,
-        input=keccak_req.input
-    )
-
 
 def load_lifted_receipts() -> List[bytes]:
     with open("../metadata/lifted_receipts.json", "r") as f:

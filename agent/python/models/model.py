@@ -1,6 +1,7 @@
-from typing import List, Optional, Any, Dict, Set, Union
+from typing import List, Optional, Any, Dict, Set
 
 from pydantic import BaseModel, Field
+
 
 class PrePostValue(BaseModel):
     pc: int = Field(..., alias="pc")

@@ -1,20 +1,17 @@
-import sys
-import os
-
 import json
+import os
 import time
 from collections import deque
 from typing import List
 
 import ray
 
-from models.verify import verify_segment_data, verify_keccak_data
-from loader import load_lifted_receipts, load_session_with_segments, load_keccak_requests, load_keccak_receipts, \
-    load_root_receipt, load_unioned_receipt, load_assumption_receipts_from_session, load_resolved_receipt, \
-    load_session
 from common.types import TaskType
-from tasks.task_runner import run_task_remote
+from loader import load_root_receipt, load_unioned_receipt, load_resolved_receipt, \
+    load_session
 from models.model import ResolveInput, FinalizeInput, clean_none
+from tasks.task_runner import run_task_remote
+
 
 def run_join_with_ray(inputs: List[bytes]) -> bytes:
     queue = deque(inputs)

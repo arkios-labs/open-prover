@@ -1,5 +1,5 @@
-from collections import deque
 from typing import List
+
 from .base import TaskHandler
 
 

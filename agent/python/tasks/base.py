@@ -1,8 +1,9 @@
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any
-import subprocess
-import os
 import json
+import os
+import subprocess
+from abc import ABC, abstractmethod
+from typing import List
+import platform
 
 
 class TaskHandler(ABC):
@@ -74,9 +75,17 @@ class TaskHandler(ABC):
         env["AGENT_TYPE"] = "r0"
         env["TASK_TYPE"] = task_type
 
+        arch = platform.machine().lower()
+
+        if arch == "arm64":
+            prover_path = "../r0_prover_arm64"
+        else:
+            prover_path = "../r0_prover_amd64"
+        print(f"Using prover binary: {prover_path}")
+
         try:
             result = subprocess.run(
-                ["../r0_prover"],
+                [prover_path],
                 input=input_data,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -102,7 +111,7 @@ class TaskHandler(ABC):
             print(f"Rust binary timed out after {e.timeout} seconds")
             raise
         except FileNotFoundError:
-            print("Rust binary '../r0_prover' not found")
+            print(f"Rust binary {prover_path} not found")
             print("Current working directory:", os.getcwd())
             print("Available files:", os.listdir("."))
             raise
