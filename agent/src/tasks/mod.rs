@@ -63,6 +63,7 @@ pub struct FinalizeInput {
     pub(crate) image_id: String,
 }
 
+#[async_trait::async_trait(?Send)]
 pub trait Agent {
     fn execute(&self, data: Vec<u8>) -> Result<Vec<u8>>;
     fn prove(&self, data: Vec<u8>) -> Result<Vec<u8>>;
@@ -70,8 +71,8 @@ pub trait Agent {
     fn keccak(&self, prove_keccak_request: Vec<u8>) -> Result<Vec<u8>>;
     fn union(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    fn finalize(&self, input: Vec<u8>) -> Result<(Vec<u8>)>;
-    fn stark2snark(&self, data: Vec<u8>) -> Result<Vec<u8>>;
+    fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    async fn stark2snark(&self, data: Vec<u8>) -> Result<Vec<u8>>;
 }
 
 pub fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {

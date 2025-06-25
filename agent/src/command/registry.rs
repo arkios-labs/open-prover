@@ -32,7 +32,7 @@ impl FromStr for Command {
     }
 }
 impl Command {
-    pub fn apply(self, agent: &dyn Agent, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub async fn apply(self, agent: &dyn Agent, input: Vec<u8>) -> Result<Vec<u8>> {
         match self {
             Command::Execute => agent.execute(input),
             Command::Join => agent.join(input),
@@ -41,7 +41,7 @@ impl Command {
             Command::Resolve => agent.resolve(input),
             Command::Union => agent.union(input),
             Command::Keccak => agent.keccak(input),
-            Command::Stark2Snark => agent.stark2snark(input),
+            Command::Stark2Snark => agent.stark2snark(input).await,
         }
     }
 }

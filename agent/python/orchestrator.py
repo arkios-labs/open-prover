@@ -2,7 +2,7 @@ import json
 import sys
 
 import ray
-import platform
+
 from common.types import TaskType
 from loader import load_lifted_receipts, load_session_with_segments, load_keccak_requests, load_keccak_receipts
 from runner import run_join_with_ray, run_prove_with_ray, run_keccak_with_ray, run_union_with_ray, \

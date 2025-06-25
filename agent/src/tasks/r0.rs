@@ -6,8 +6,10 @@ use crate::tasks::{
 };
 use anyhow::{Context, bail};
 use anyhow::{Result, anyhow};
-// use async_trait::async_trait;
+use async_trait::async_trait;
 use hex::FromHex;
+use nix::{sys::stat, unistd};
+use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
     AssumptionReceipt, Digest, Groth16ProofJson, Groth16Receipt, Groth16ReceiptVerifierParameters,
@@ -20,17 +22,16 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{env, fs, rc::Rc};
-// use std::os::macos::raw::stat;
-use nix::{sys::stat, unistd};
-use std::process::Command;
 use tempfile::tempdir;
+use tokio::process::Command;
 use tracing::{info, warn};
 
 const APP_DIR: &str = "";
 const WITNESS_FILE: &str = "output.wtns";
 const PROOF_FILE: &str = "proof.json";
 const IDENT_FILE: &str = "ident.json";
-const STARK_VERIFY_FILE: &str = "stark_verify";
+const STARK_VERIFY_BIN: &str = "stark_verify";
+const PROVER_BIN: &str = "prover";
 pub struct RiscZeroAgent {
     pub prover: Option<Rc<dyn ProverServer>>,
     pub verifier_ctx: VerifierContext,
@@ -50,7 +51,7 @@ impl RiscZeroAgent {
     }
 }
 
-// #[async_trait]
+#[async_trait::async_trait(?Send)]
 impl Agent for RiscZeroAgent {
     fn execute(&self, _data: Vec<u8>) -> Result<Vec<u8>> {
         bail!("RiscZeroTask::execute is not supported in this context");
@@ -270,121 +271,78 @@ impl Agent for RiscZeroAgent {
         serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
     }
 
-    fn stark2snark(&self, rollup_receipt: Vec<u8>) -> Result<Vec<u8>> {
+    async fn stark2snark(&self, rollup_receipt: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::stark2snark()");
 
-        let work_dir = env::current_dir()?;
-        let receipt: Receipt =
-            deserialize_obj(&rollup_receipt).context("Failed to deserialize receipt")?;
+        let work_dir = tempdir().context("Failed to create tmpdir")?;
 
-        info!("performing identity predicate on receipt");
+        // // 1. Deserialize rollup receipt
+        let receipt: Receipt = deserialize_obj(&rollup_receipt)?;
 
+        // // 2. Get succinct receipt
         let succinct_receipt = receipt.inner.succinct()?;
 
-        // let receipt_ident = risc0_zkvm::recursion::identity_p254(succinct_receipt)
-        //     .context("identity predicate failed")?;
+        // 3. generate identity predicate
+        let receipt_ident = identity_p254(succinct_receipt).context("identity predicate failed")?;
 
-        let output_path: PathBuf = env::current_dir()?.join("metadata/".to_owned() + IDENT_FILE);
-
-        let receipt_ident: SuccinctReceipt<ReceiptClaim>;
-        if output_path.exists() {
-            let receipt_ident_bytes =
-                fs::read(&output_path).context("Failed to read existing receipt identity file")?;
-            receipt_ident =
-                deserialize_obj(&receipt_ident_bytes).context("Failed to deserialize receipt")?;
-        } else {
-            receipt_ident = risc0_zkvm::recursion::identity_p254(succinct_receipt)
-                .context("identity predicate failed")?;
-
-            let receipt_ident_bytes =
-                serialize_obj(&receipt_ident).context("Failed to serialize receipt identity")?;
-
-            fs::write(&output_path, &receipt_ident_bytes)
-                .context("Failed to write receipt identity file")?;
-        }
-
-        // let receipt_ident_bytes = serialize_obj(&receipt_ident).context("Failed to serialize receipt")?;
-        //
-        // let output_path = env::current_dir()?.join("metadata/".to_owned() + IDENT_FILE);
-        //
-        // fs::write(output_path, &receipt_ident_bytes);
-
+        // 4. Convert seal to JSON
         let seal_bytes = receipt_ident.get_seal_bytes();
-        info!("Completing identity predicate");
-
         info!("Running seal-to-json");
 
-        let seal_path = work_dir.join("input.json");
+        let seal_path = work_dir.path().join("input.json");
         let seal_json = File::create(&seal_path)?;
         let mut seal_reader = Cursor::new(&seal_bytes);
         seal_to_json(&mut seal_reader, &seal_json)?;
 
-        let app_path = env::current_dir()?;
+        // 5. Prepare to run stark_verify
+        let app_path = Path::new("./");
         if !app_path.exists() {
             bail!("Missing app path");
         }
-
-        println!("app path: {:?}", app_path);
         info!("Running stark_verify");
-        let witness_file = work_dir.join(WITNESS_FILE);
+        let witness_file = work_dir.path().join(WITNESS_FILE);
 
-        // 일반 파일로 witness 출력 (FIFO 대신)
-        info!("Creating witness file at: {:?}", witness_file);
+        // Create a named pipe for the witness data so that the prover can start before
+        // the witness generation is complete.
 
-        // stark_verify 프로세스 실행
-        let mut wit_gen = Command::new(env::current_dir()?.join(STARK_VERIFY_FILE))
+        unistd::mkfifo(&witness_file, stat::Mode::S_IRWXU).context("Failed to create fifo")?;
+
+        // Spawn stark_verify process
+        let mut wit_gen = Command::new(app_path.join(STARK_VERIFY_BIN))
             .arg(&seal_path)
             .arg(&witness_file)
             .spawn()?;
 
-        wit_gen.wait()?;
-
-        // witness 파일이 생성되었는지 확인하고 내용 로깅
-        if witness_file.exists() {
-            let witness_size = fs::metadata(&witness_file)?.len();
-            info!(
-                "Witness file created successfully, size: {} bytes",
-                witness_size
-            );
-
-            // witness 파일의 처음 몇 바이트를 로깅 (디버깅용)
-            if witness_size > 0 {
-                let mut witness_content = fs::read(&witness_file)?;
-                let preview_size = std::cmp::min(witness_size as usize, 100);
-                let preview = &witness_content[..preview_size];
-                info!(
-                    "Witness file preview (first {} bytes): {:?}",
-                    preview_size, preview
-                );
-            }
-        } else {
-            warn!("Witness file was not created");
-        }
-
         info!("Running gnark");
         let cs_file = app_path.join("stark_verify.cs");
         let pk_file = app_path.join("stark_verify_final.pk.dmp");
-        let proof_file = work_dir.join(PROOF_FILE);
+        let proof_file = work_dir.path().join(PROOF_FILE);
 
-        let mut prover = Command::new(app_path.join("prover"))
+        // Spawn prover process
+        let mut prover = Command::new(app_path.join(PROVER_BIN))
             .arg(cs_file)
             .arg(pk_file)
             .arg(witness_file)
             .arg(&proof_file)
             .spawn()?;
 
-        info!("Running prover");
-
         // Wait for stark_verify to complete
-        let wit_gen_status = wit_gen.wait()?;
-        if !wit_gen_status.success() {
-            prover.kill().expect("Failed to kill prover process");
-            bail!("Failed to run stark_verify");
+        info!("Running prover");
+        match wit_gen.wait().await {
+            // Make sure the prover is always killed, otherwise it will wait forever
+            Err(err) => {
+                prover.kill().await.expect("Failed to kill prover process");
+                bail!(err);
+            }
+            Ok(status) if !status.success() => {
+                prover.kill().await.expect("Failed to kill prover process");
+                bail!("Failed to run stark_verify");
+            }
+            _ => {}
         }
 
         // stark_verify completed successfully, now wait for prover
-        let prover_status = prover.wait()?;
-        if !prover_status.success() {
+        if !prover.wait().await?.success() {
             bail!("Failed to run gnark prover");
         }
 
@@ -402,107 +360,15 @@ impl Agent for RiscZeroAgent {
             Groth16ReceiptVerifierParameters::default().digest(),
         );
 
-        let snark_receipt =
-            Receipt::new(InnerReceipt::Groth16(snark_receipt), receipt.journal.bytes);
+        let snark_receipt = Receipt::new(
+            InnerReceipt::Groth16(snark_receipt),
+            receipt.journal.bytes,
+        );
 
-        let snark_receipt_bytes =
-            serialize_obj(&snark_receipt).context("Failed to serialize snark receipt")?;
+        let serialized = serialize_obj(&snark_receipt).context("Failed to serialize receipt")?;
 
-        Ok(snark_receipt_bytes)
+        Ok(serialized)
     }
-
-    // pub async fn stark2snark_async(rollup_receipt: Vec<u8>) -> Result<Vec<u8>> {
-    //     let work_dir = std::env::current_dir()?;
-    //     // fs::create_dir_all(&work_dir)?;
-    //
-    //     let receipt: Receipt = deserialize_obj(&rollup_receipt)?;
-    //
-    //     let succinct_receipt = receipt.inner.succinct()?;
-    //     let receipt_ident = risc0_zkvm::recursion::identity_p254(succinct_receipt)
-    //         .context("identity predicate failed")?;
-    //     let seal_bytes = receipt_ident.get_seal_bytes();
-    //
-    //     let seal_path = work_dir.join("input.json");
-    //
-    //     // let seal_path = work_dir.path().join("input.json");
-    //     let seal_json = File::create(&seal_path)?;
-    //     let mut seal_reader = Cursor::new(&seal_bytes);
-    //     seal_to_json(&mut seal_reader, &seal_json)?;
-    //
-    //     let app_path = Path::new("/").join(APP_DIR);
-    //     if !app_path.exists() {
-    //         bail!("Missing app path");
-    //     }
-    //
-    //     let witness_file = work_dir.join(WITNESS_FILE);
-    //
-    //     // let witness_file = work_dir.path().join(WITNESS_FILE);
-    //
-    //     // Create a named pipe for the witness data so that the prover can start before
-    //     // the witness generation is complete.
-    //     unistd::mkfifo(&witness_file, stat::Mode::S_IRWXU).context("Failed to create fifo")?;
-    //
-    //     // Spawn stark_verify process
-    //     let mut wit_gen = Command::new(app_path.join("stark_verify"))
-    //         .arg(&seal_path)
-    //         .arg(&witness_file)
-    //         .spawn()?;
-    //
-    //     let cs_file = app_path.join("stark_verify.cs");
-    //     let pk_file = app_path.join("stark_verify_final.pk.dmp");
-    //     let proof_file = work_dir.join(PROOF_FILE);
-    //
-    //     // let proof_file = work_dir.path().join(PROOF_FILE);
-    //
-    //     // Spawn prover process
-    //     let mut prover = Command::new(app_path.join("prover"))
-    //         .arg(cs_file)
-    //         .arg(pk_file)
-    //         .arg(witness_file)
-    //         .arg(&proof_file)
-    //         .spawn()?;
-    //
-    //     // Wait for stark_verify to complete
-    //     match wit_gen.wait().await {
-    //         // Make sure the prover is always killed, otherwise it will wait forever
-    //         Err(err) => {
-    //             prover.kill().await.expect("Failed to kill prover process");
-    //             bail!(err);
-    //         }
-    //         Ok(status) if !status.success() => {
-    //             prover.kill().await.expect("Failed to kill prover process");
-    //             bail!("Failed to run stark_verify");
-    //         }
-    //         _ => {}
-    //     }
-    //
-    //     // stark_verify completed successfully, now wait for prover
-    //     if !prover.wait().await?.success() {
-    //         bail!("Failed to run gnark prover");
-    //     }
-    //
-    //     let mut proof = File::open(proof_file)?;
-    //     let mut contents = String::new();
-    //     proof.read_to_string(&mut contents)?;
-    //
-    //     let proof_json: Groth16ProofJson = serde_json::from_str(&contents)?;
-    //     let seal: Groth16Seal = proof_json.try_into()?;
-    //
-    //     let snark_receipt = Groth16Receipt::new(
-    //         seal.to_vec(),
-    //         receipt.claim().context("Receipt missing claim")?.clone(),
-    //         Groth16ReceiptVerifierParameters::default().digest(),
-    //     );
-    //
-    //     let snark_receipt = Receipt::new(
-    //         risc0_zkvm::InnerReceipt::Groth16(snark_receipt),
-    //         receipt.journal.bytes,
-    //     );
-    //
-    //     let snark_receipt_bytes = serialize_obj(&snark_receipt)?;
-    //
-    //     Ok(snark_receipt_bytes)
-    // }
 }
 
 #[test]
@@ -826,7 +692,6 @@ fn test_resolve_on_session() -> Result<()> {
     let session_json = fs::read_to_string(&session_path)?;
     let session: SerializableSession = serde_json::from_str(&session_json)?;
 
-
     // 3. Load root receipt
     let root_path = env::current_dir()?.join("metadata/root_receipt.json");
     info!("Loading root receipt from: {:?}", root_path);
@@ -917,19 +782,20 @@ fn test_finalize_on_session() -> Result<()> {
     info!("Finalize input serialized");
 
     // 5. Call finalize()
-    let start_finalize = Instant::now();
-    let stark_receipt = agent_ref.finalize(input_bytes);
-    info!("Finalize succeeded in {:?}", start_finalize.elapsed());
-
+    let stark_finalize = Instant::now();
+    let stark_receipt = agent_ref.finalize(input_bytes)?;
+    info!("Finalize succeeded in {:?}", stark_finalize.elapsed());
     // 6. Write result
-    fs::write("metadata/result/stark.json", stark_receipt)?;
+    let finalized_receipt: Receipt = deserialize_obj(&stark_receipt)?;
+    let finalized_json = serde_json::to_string_pretty(&finalized_receipt)?;
+    fs::write("metadata/result/finalized_receipt.json", finalized_json)?;
     info!("Final STARK receipt written to metadata/result/stark.json");
 
     Ok(())
 }
 
-#[test]
-fn test_stark2snark() -> Result<()> {
+#[tokio::test]
+async fn test_stark2snark() -> Result<()> {
     use std::time::Instant;
     use std::{env, fs};
     use tracing::info;
@@ -948,10 +814,14 @@ fn test_stark2snark() -> Result<()> {
     info!("Loading stark receipt from: {:?}", stark_path);
 
     let stark_receipt_bytes = fs::read(&stark_path)?;
-    agent_ref
+    let groth16_receipt = agent_ref
         .stark2snark(stark_receipt_bytes)
+        .await
         .expect("stark2snark conversion failed: could not convert stark receipt to snark");
 
+    let groth16_receipt: Receipt = deserialize_obj(&groth16_receipt)?;
+    let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
+    fs::write("metadata/result/groth16.json", groth16_json)?;
     Ok(())
 }
 pub(crate) fn read_image_id(image_id: &str) -> Result<Digest> {
