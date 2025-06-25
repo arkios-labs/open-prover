@@ -108,6 +108,7 @@ def run_union_with_ray(inputs: List[bytes], output_path: str = "../metadata/kecc
 
     queue = [[receipt] for receipt in inputs]
     receipt_count = len(inputs)
+
     level = 0
 
     while len(queue) > 1:
@@ -115,27 +116,24 @@ def run_union_with_ray(inputs: List[bytes], output_path: str = "../metadata/kecc
         print(f"UNION Level {level}: {len(queue)} branches")
 
         next_level = []
-        i = 0
+        futures = []
 
-        while i + 1 < len(queue):
+        for i in range(0, len(queue) - 1, 2):
+            left_receipt = queue[i][-1]
+            right_receipt = queue[i + 1][-1]
+            futures.append((i, run_task_remote.remote(TaskType.UNION.value, [left_receipt, right_receipt])))
+
+        results = [(i, ray.get(future)) for i, future in futures]
+
+        for i, union_result in results:
             left_branch = queue[i]
             right_branch = queue[i + 1]
-
-            # 각 Branch의 마지막 receipt를 가져옴
-            left_receipt = left_branch[-1]
-            right_receipt = right_branch[-1]
-
-            future = run_task_remote.remote(TaskType.UNION.value, [left_receipt, right_receipt])
-            union_result = ray.get(future)
-
             new_branch = left_branch + right_branch + [union_result]
             next_level.append(new_branch)
-
             print(f"  Union [{i} + {i + 1}] size: {len(union_result)} bytes")
-            i += 2
 
-        if i < len(queue):
-            next_level.append(queue[i])
+        if len(queue) % 2 == 1:
+            next_level.append(queue[-1])
 
         queue = next_level
 

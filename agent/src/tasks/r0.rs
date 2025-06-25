@@ -918,7 +918,7 @@ fn test_finalize_on_session() -> Result<()> {
 
     // 5. Call finalize()
     let start_finalize = Instant::now();
-    let stark_receipt = agent_ref.finalize(input_bytes)?;
+    let stark_receipt = agent_ref.finalize(input_bytes);
     info!("Finalize succeeded in {:?}", start_finalize.elapsed());
 
     // 6. Write result
