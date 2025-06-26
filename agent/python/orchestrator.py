@@ -6,7 +6,7 @@ import ray
 from common.types import TaskType
 from loader import load_lifted_receipts, load_session_with_segments, load_keccak_requests, load_keccak_receipts
 from runner import run_join_with_ray, run_prove_with_ray, run_keccak_with_ray, run_union_with_ray, \
-    run_resolve_with_ray, run_finalize_with_ray
+    run_resolve_with_ray, run_finalize_with_ray, run_snark_with_ray
 
 
 def main(task_type: TaskType):
@@ -65,6 +65,11 @@ def main(task_type: TaskType):
         print("Starting FINALIZE test...")
         result = run_finalize_with_ray()
         print("FINALIZE test completed successfully")
+        return result
+    elif task_type == TaskType.SNARK:
+        print("Starting SNARK test...")
+        result = run_snark_with_ray()
+        print("SNARK test completed successfully")
         return result
     else:
         raise NotImplementedError(f"Task type {task_type.value} not yet implemented in main.")

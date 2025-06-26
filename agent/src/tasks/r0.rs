@@ -903,7 +903,7 @@ async fn test_stark2snark() -> Result<()> {
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
-    let stark_path = env::current_dir()?.join("metadata/result/stark.json");
+    let stark_path = env::current_dir()?.join("metadata/result/finalized_receipt.json");
     info!("Loading stark receipt from: {:?}", stark_path);
 
     let stark_receipt_bytes = fs::read(&stark_path)?;

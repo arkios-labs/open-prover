@@ -240,3 +240,35 @@ def run_finalize_with_ray(output_path: str = "../metadata/result/stark.json") ->
         print(f"Failed to save STARK receipt: {e}")
 
     return stark_receipt
+
+def run_snark_with_ray(stark_path: str = "../metadata/result/finalized_receipt.json",
+                       output_path: str = "../metadata/result/groth16.json") -> bytes:
+
+    print(f"Loading STARK receipt from: {stark_path}")
+    if not os.path.exists(stark_path):
+        raise FileNotFoundError(f"STARK receipt file not found: {stark_path}")
+
+    with open(stark_path, "rb") as f:
+        stark_receipt_bytes = f.read()
+
+    if not stark_receipt_bytes:
+        raise ValueError("STARK receipt bytes should not be empty")
+    print("Calling stark2snark task on agent...")
+    groth16_bytes = ray.get(run_task_remote.remote(TaskType.SNARK.value, [stark_receipt_bytes]))
+
+    if not groth16_bytes:
+        raise ValueError("Groth16 receipt should not be empty")
+
+    if isinstance(groth16_bytes, list):
+        groth16_bytes = bytes(groth16_bytes)
+
+    try:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(groth16_bytes)
+        print(f"Final Groth16 receipt written to {output_path}")
+    except Exception as e:
+        print(f"Failed to save Groth16 receipt: {e}")
+        raise
+
+    return groth16_bytes
