@@ -57,8 +57,12 @@ impl Agent for RiscZeroAgent {
         bail!("RiscZeroTask::execute is not supported in this context");
     }
 
-    fn prove(&self, segment_bytes: Vec<u8>) -> Result<Vec<u8>> {
-        let segment = deserialize_obj(&segment_bytes).context("Failed to deserialize segment")?;
+    fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        if input.is_empty() {
+            bail!("prove input is empty");
+        }
+
+        let segment = deserialize_obj(&input).context("Failed to deserialize segment")?;
 
         let segment_receipt = self
             .prover
@@ -82,6 +86,10 @@ impl Agent for RiscZeroAgent {
 
     fn join(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::join()");
+
+        if input.is_empty() {
+            bail!("join input is empty");
+        }
 
         let receipts: Vec<Vec<u8>> =
             serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
@@ -109,11 +117,15 @@ impl Agent for RiscZeroAgent {
         Ok(serialized)
     }
 
-    fn keccak(&self, pending_keccak_bytes: Vec<u8>) -> Result<Vec<u8>> {
+    fn keccak(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::keccak()");
 
+        if input.is_empty() {
+            bail!("keccak input is empty");
+        }
+
         let prove_keccak_request_local: ProveKeccakRequestLocal =
-            deserialize_obj(&pending_keccak_bytes)
+            deserialize_obj(&input)
                 .context("Failed to deserialize keccak request")?;
 
         // Conversion is required because the library's `ProveKeccakRequest` type doesn't support deserialization
@@ -131,6 +143,10 @@ impl Agent for RiscZeroAgent {
 
     fn union(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::union()");
+
+        if input.is_empty() {
+            bail!("union input is empty");
+        }
 
         let receipts: Vec<Vec<u8>> = serde_json::from_slice(&input)
             .context("Failed to parse input as Vec<Vec<u8>> for union")?;
@@ -162,6 +178,10 @@ impl Agent for RiscZeroAgent {
 
     fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::resolve()");
+
+        if input.is_empty() {
+            bail!("resolve input is empty");
+        }
 
         let ResolveInput {
             mut root,
@@ -248,6 +268,10 @@ impl Agent for RiscZeroAgent {
     fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::finalize()");
 
+        if input.is_empty() {
+            bail!("finalize input is empty");
+        }
+
         let FinalizeInput {
             root,
             journal,
@@ -271,13 +295,17 @@ impl Agent for RiscZeroAgent {
         serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
     }
 
-    async fn snark(&self, rollup_receipt: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::stark2snark()");
+    async fn snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        info!("RiscZeroTask::snark()");
+
+        if input.is_empty() {
+            bail!("snark input is empty");
+        }
 
         let work_dir = tempdir().context("Failed to create tmpdir")?;
 
         // // 1. Deserialize rollup receipt
-        let receipt: Receipt = deserialize_obj(&rollup_receipt)?;
+        let receipt: Receipt = deserialize_obj(&input)?;
 
         // // 2. Get succinct receipt
         let succinct_receipt = receipt.inner.succinct()?;
