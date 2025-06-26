@@ -1,17 +1,17 @@
 use std::{env, fs};
 use std::collections::VecDeque;
 use std::time::Instant;
-use anyhow::{anyhow, Context, Result};
-use risc0_zkvm::{AssumptionReceipt, InnerAssumptionReceipt, ReceiptClaim, SuccinctReceipt, Unknown};
-use tracing;
+use anyhow::{anyhow, Context};
+use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
+use risc0_zkvm::sha::Digestible;
 use tracing::info;
 use crate::io::input::env::EnvProvider;
 use crate::tasks::{deserialize_obj, serialize_obj, Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession};
 use crate::tasks::factory::get_agent;
 use crate::tasks::r0::read_image_id;
 
-#[test]
-fn test_e2e_stark_proof_generation() -> Result<()> {
+#[tokio::test]
+async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
     let input = Box::new(EnvProvider {
@@ -81,7 +81,7 @@ fn test_e2e_stark_proof_generation() -> Result<()> {
         start_step_2.elapsed(),
         session.segments.len()
     );
-    
+
     assert!(!root_receipt_bytes.is_empty(), "Root receipt should not be empty");
     
     let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&root_receipt_bytes)?;
@@ -198,7 +198,7 @@ fn test_e2e_stark_proof_generation() -> Result<()> {
     let resolved = agent_ref.resolve(resolve_bytes)?;
     
     assert!(!resolved.is_empty(), "Resolved result should not be empty");
-    
+
     info!("Step 5 resolve done in {:?}", start_step_5.elapsed());
 
     // --------------------------------------------------------
@@ -230,5 +230,28 @@ fn test_e2e_stark_proof_generation() -> Result<()> {
     
     info!("Step 6 finalize done in {:?}", start_step_6.elapsed());
 
+    // --------------------------------------------------------
+    // Step 7: Stark2Snark
+    // --------------------------------------------------------
+    let start_step_7 = Instant::now();
+
+    let groth16_receipt = agent_ref
+        .stark2snark(rollup_receipt)
+        .await
+        .expect("stark2snark conversion failed: could not convert stark receipt to snark");
+    
+    assert!(!groth16_receipt.is_empty(), "Groth16 receipt should not be empty");
+    
+    info!("Step 7 stark2Snark done in {:?}", start_step_7.elapsed());
+
+    let groth16_receipt: Receipt = deserialize_obj(&groth16_receipt)?;
+    
+    assert!(groth16_receipt.claim().is_ok(), "Final Groth16 receipt should have a claim");
+    
+    let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
+    fs::write("metadata/result/groth16.json", groth16_json)?;
+    
+    assert!(fs::metadata("metadata/result/groth16.json").is_ok(), "Groth16 result file should be created");
+    
     Ok(())
 }

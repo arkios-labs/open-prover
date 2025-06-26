@@ -1,1 +1,2 @@
-pub mod stark; 
+pub mod stark;
+mod snark; 
