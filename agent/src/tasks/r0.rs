@@ -360,10 +360,8 @@ impl Agent for RiscZeroAgent {
             Groth16ReceiptVerifierParameters::default().digest(),
         );
 
-        let snark_receipt = Receipt::new(
-            InnerReceipt::Groth16(snark_receipt),
-            receipt.journal.bytes,
-        );
+        let snark_receipt =
+            Receipt::new(InnerReceipt::Groth16(snark_receipt), receipt.journal.bytes);
 
         let serialized = serialize_obj(&snark_receipt).context("Failed to serialize receipt")?;
 
@@ -381,13 +379,9 @@ fn test_keccak_on_pending_keccaks() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    unsafe {
-        env::set_var("AGENT_TYPE", "invalid");
-    }
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
+    let input = Box::new(EnvProvider { key: agent_type });
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
@@ -425,17 +419,39 @@ fn test_keccak_on_pending_keccaks() -> Result<()> {
         info!("Proving keccak [{} / {}]...", i + 1, keccak_count);
 
         let result = agent_ref.keccak(bytes)?;
+        assert!(
+            !result.is_empty(),
+            "Keccak result should not be empty for request {}",
+            i
+        );
+
         let receipt: SuccinctReceipt<Unknown> =
             deserialize_obj(&result).context("Failed to deserialize keccak receipt")?;
+
+        assert!(
+            receipt.claim.as_value().is_ok(),
+            "Keccak receipt should have a claim"
+        );
 
         info!("Keccak [{}] result size: {}", i, result.len());
         all_receipts.push(receipt);
     }
 
+    assert_eq!(
+        all_receipts.len(),
+        keccak_count,
+        "Number of receipts should match keccak count"
+    );
+
     let file_path = PathBuf::from("metadata/keccak/keccak_receipts.json");
     let receipts_json = serde_json::to_string_pretty(&all_receipts)?;
     fs::write(&file_path, receipts_json)
         .with_context(|| format!("Failed to write receipts to {:?}", file_path))?;
+
+    assert!(
+        fs::metadata(&file_path).is_ok(),
+        "Keccak receipts file should be created"
+    );
 
     info!(
         "All {} keccak receipts written to {:?} in {:?}",
@@ -456,13 +472,9 @@ fn test_union_on_keccaks_tree() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    unsafe {
-        env::set_var("AGENT_TYPE", "invalid");
-    }
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
+    let input = Box::new(EnvProvider { key: agent_type });
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
@@ -472,6 +484,8 @@ fn test_union_on_keccaks_tree() -> Result<()> {
     let json = fs::read_to_string(&path)?;
     let keccak_receipts: Vec<SuccinctReceipt<Unknown>> = serde_json::from_str(&json)?;
     let receipt_count = keccak_receipts.len();
+    assert!(receipt_count > 0, "No keccak receipts found");
+
     info!("Loaded {} keccak receipts", receipt_count);
 
     let mut queue: Vec<Vec<Vec<u8>>> = keccak_receipts
@@ -496,6 +510,7 @@ fn test_union_on_keccaks_tree() -> Result<()> {
                     .expect("Failed to serialize union input");
 
             let union = agent_ref.union(input).expect("Union failed");
+            assert!(!union.is_empty(), "Union result should not be empty");
 
             let mut new_branch = left;
             new_branch.extend(right);
@@ -516,6 +531,11 @@ fn test_union_on_keccaks_tree() -> Result<()> {
 
     let final_branch = queue.pop().unwrap();
     let final_result = final_branch.last().unwrap();
+    assert!(
+        !final_result.is_empty(),
+        "Final union result should not be empty"
+    );
+
     let elapsed = start.elapsed();
 
     info!(
@@ -526,9 +546,15 @@ fn test_union_on_keccaks_tree() -> Result<()> {
     );
 
     let union_receipt: SuccinctReceipt<Unknown> = deserialize_obj(final_result)?;
+
     let union_json = serde_json::to_string_pretty(&union_receipt)?;
     let output_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
     fs::write(&output_path, union_json)?;
+
+    assert!(
+        fs::metadata(&output_path).is_ok(),
+        "Unioned receipt file should be created"
+    );
 
     info!("Unioned receipt written to {:?}", output_path);
 
@@ -545,13 +571,9 @@ fn test_prove_all_segments() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    unsafe {
-        env::set_var("AGENT_TYPE", "invalid");
-    }
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
+    let input = Box::new(EnvProvider { key: agent_type });
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
@@ -575,17 +597,39 @@ fn test_prove_all_segments() -> Result<()> {
         let bytes = serialize_obj(segment)?;
         let lifted_bytes = agent_ref.prove(bytes)?;
 
+        assert!(
+            !lifted_bytes.is_empty(),
+            "Lifted bytes should not be empty for segment {}",
+            i
+        );
+
         info!("Segment [{}] proof size: {}", i, lifted_bytes.len());
 
         let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
             .context(format!("Failed to deserialize receipt for segment {}", i))?;
 
+        assert!(
+            lifted_receipt.claim.as_value().is_ok(),
+            "Lifted receipt should have a claim"
+        );
+
         all_receipts.push(lifted_receipt);
     }
+
+    assert_eq!(
+        all_receipts.len(),
+        segment_count,
+        "Number of receipts should match segment count"
+    );
 
     let output_path = env::current_dir()?.join("metadata/lifted_receipts.json");
     let output_json = serde_json::to_string_pretty(&all_receipts)?;
     fs::write(&output_path, output_json).context("Failed to write lifted receipts JSON")?;
+
+    assert!(
+        fs::metadata(&output_path).is_ok(),
+        "Lifted receipts file should be created"
+    );
 
     info!(
         "All {} segment receipts written to {:?} in {:?}",
@@ -606,13 +650,9 @@ fn test_join_on_lifted_receipts() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    unsafe {
-        env::set_var("AGENT_TYPE", "invalid");
-    }
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
+    let input = Box::new(EnvProvider { key: agent_type });
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
@@ -622,6 +662,8 @@ fn test_join_on_lifted_receipts() -> Result<()> {
 
     let lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> = serde_json::from_str(&json)?;
     let receipt_count = lifted_receipts.len();
+    assert!(receipt_count > 0, "No lifted receipts found");
+
     info!("Loaded {} lifted receipts", receipt_count);
 
     let serialized_receipts: Vec<Vec<u8>> = lifted_receipts
@@ -640,15 +682,26 @@ fn test_join_on_lifted_receipts() -> Result<()> {
             .expect("Failed to serialize join input");
 
         let joined = agent_ref.join(join_input).expect("Join failed");
+        assert!(!joined.is_empty(), "Joined result should not be empty");
+        assert!(
+            joined.len() > left.len() || joined.len() > right.len(),
+            "Joined result should be larger than individual receipts"
+        );
+
+        queue.push_back(joined);
         info!(
             "Join successful (size: {}) | Remaining queue: {}",
-            joined.len(),
+            queue.back().unwrap().len(),
             queue.len()
         );
-        queue.push_back(joined);
     }
 
     let final_result = queue.pop_front().unwrap();
+    assert!(
+        !final_result.is_empty(),
+        "Final joined result should not be empty"
+    );
+
     let elapsed = start.elapsed();
 
     info!(
@@ -659,8 +712,19 @@ fn test_join_on_lifted_receipts() -> Result<()> {
     );
 
     let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&final_result)?;
+    assert!(
+        root_receipt.claim.as_value().is_ok(),
+        "Root receipt should have a claim"
+    );
+
     let root_json = serde_json::to_string_pretty(&root_receipt)?;
     fs::write("metadata/root_receipt.json", root_json)?;
+
+    assert!(
+        fs::metadata("metadata/root_receipt.json").is_ok(),
+        "Root receipt file should be created"
+    );
+
     info!("Root receipt written to metadata/root_receipt.json");
 
     Ok(())
@@ -676,37 +740,35 @@ fn test_resolve_on_session() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    unsafe {
-        env::set_var("AGENT_TYPE", "invalid");
-    }
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
+    let input = Box::new(EnvProvider { key: agent_type });
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
-    // 1. Load and parse session
     let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
     info!("Loading session from: {:?}", session_path);
     let session_json = fs::read_to_string(&session_path)?;
     let session: SerializableSession = serde_json::from_str(&session_json)?;
 
-    // 3. Load root receipt
     let root_path = env::current_dir()?.join("metadata/root_receipt.json");
     info!("Loading root receipt from: {:?}", root_path);
     let root_json = fs::read_to_string(&root_path)?;
     let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
+    assert!(
+        root_receipt.claim.as_value().is_ok(),
+        "Root receipt should have a claim"
+    );
+
     info!("Loaded root receipt");
 
-    // 4. Load unioned receipt (optional)
     let union_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
     info!("Loading unioned receipt from: {:?}", union_path);
     let union_json = fs::read_to_string(&union_path)?;
     let union_receipt: SuccinctReceipt<Unknown> = serde_json::from_str(&union_json)?;
+
     info!("Loaded unioned receipt");
 
-    // 5. Construct ResolveInput
     let resolve_input = ResolveInput {
         root: root_receipt,
         union: Some(union_receipt),
@@ -716,16 +778,27 @@ fn test_resolve_on_session() -> Result<()> {
     let input_bytes = serde_json::to_vec(&resolve_input)?;
     info!("Serialized resolve input");
 
-    // 6. Call resolve
     info!("Calling resolve()...");
     let start_resolve = Instant::now();
     let resolved = agent_ref.resolve(input_bytes)?;
+    assert!(!resolved.is_empty(), "Resolved result should not be empty");
+
     info!("Resolve completed in {:?}", start_resolve.elapsed());
 
-    // 7. Write resolved output
     let resolved_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&resolved)?;
+    assert!(
+        resolved_receipt.claim.as_value().is_ok(),
+        "Resolved receipt should have a claim"
+    );
+
     let resolved_json = serde_json::to_string_pretty(&resolved_receipt)?;
     fs::write("metadata/resolved_receipt.json", resolved_json)?;
+
+    assert!(
+        fs::metadata("metadata/resolved_receipt.json").is_ok(),
+        "Resolved receipt file should be created"
+    );
+
     info!("Resolved receipt written to metadata/resolved_receipt.json");
 
     Ok(())
@@ -741,20 +814,24 @@ fn test_finalize_on_session() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
+
+    let input = Box::new(EnvProvider { key: agent_type });
+
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
-    // 1. Load root receipt (resolved)
     let root_path = env::current_dir()?.join("metadata/resolved_receipt.json");
     info!("Loading resolved receipt from: {:?}", root_path);
     let root_json = fs::read_to_string(&root_path)?;
     let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
+    assert!(
+        root_receipt.claim.as_value().is_ok(),
+        "Root receipt should have a claim"
+    );
+
     info!("Resolved receipt loaded");
 
-    // 2. Load session and extract journal
     let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
     info!("Loading session from: {:?}", session_path);
     let session_json = fs::read_to_string(&session_path)?;
@@ -765,12 +842,12 @@ fn test_finalize_on_session() -> Result<()> {
         .as_ref()
         .map(|j| j.bytes.clone())
         .ok_or_else(|| anyhow!("journal is missing"))?;
+    assert!(!journal_bytes.is_empty(), "Journal should not be empty");
+
     info!("Journal loaded, size: {}", journal_bytes.len());
 
     let image_id = "3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a";
-    // 3. Load image ID
 
-    // 4. Construct FinalizeInput and serialize
     let finalize_input = FinalizeInput {
         root: root_receipt,
         journal: journal_bytes,
@@ -781,14 +858,29 @@ fn test_finalize_on_session() -> Result<()> {
     let input_bytes = serde_json::to_vec(&finalize_input)?;
     info!("Finalize input serialized");
 
-    // 5. Call finalize()
     let stark_finalize = Instant::now();
     let stark_receipt = agent_ref.finalize(input_bytes)?;
+    assert!(
+        !stark_receipt.is_empty(),
+        "Stark receipt should not be empty"
+    );
+
     info!("Finalize succeeded in {:?}", stark_finalize.elapsed());
-    // 6. Write result
+
     let finalized_receipt: Receipt = deserialize_obj(&stark_receipt)?;
+    assert!(
+        finalized_receipt.claim().is_ok(),
+        "Finalized receipt should have a claim"
+    );
+
     let finalized_json = serde_json::to_string_pretty(&finalized_receipt)?;
     fs::write("metadata/result/finalized_receipt.json", finalized_json)?;
+
+    assert!(
+        fs::metadata("metadata/result/finalized_receipt.json").is_ok(),
+        "Finalized receipt file should be created"
+    );
+
     info!("Final STARK receipt written to metadata/result/stark.json");
 
     Ok(())
@@ -804,9 +896,10 @@ async fn test_stark2snark() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
-    });
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
+
+    let input = Box::new(EnvProvider { key: agent_type });
+
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
@@ -814,14 +907,35 @@ async fn test_stark2snark() -> Result<()> {
     info!("Loading stark receipt from: {:?}", stark_path);
 
     let stark_receipt_bytes = fs::read(&stark_path)?;
+    assert!(
+        !stark_receipt_bytes.is_empty(),
+        "Stark receipt bytes should not be empty"
+    );
+
     let groth16_receipt = agent_ref
         .stark2snark(stark_receipt_bytes)
         .await
         .expect("stark2snark conversion failed: could not convert stark receipt to snark");
 
+    assert!(
+        !groth16_receipt.is_empty(),
+        "Groth16 receipt should not be empty"
+    );
+
     let groth16_receipt: Receipt = deserialize_obj(&groth16_receipt)?;
+    assert!(
+        groth16_receipt.claim().is_ok(),
+        "Groth16 receipt should have a claim"
+    );
+
     let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
     fs::write("metadata/result/groth16.json", groth16_json)?;
+
+    assert!(
+        fs::metadata("metadata/result/groth16.json").is_ok(),
+        "Groth16 receipt file should be created"
+    );
+
     Ok(())
 }
 pub(crate) fn read_image_id(image_id: &str) -> Result<Digest> {

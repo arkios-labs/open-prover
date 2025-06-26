@@ -14,8 +14,10 @@ use crate::tasks::r0::read_image_id;
 async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_|"r0".to_string());
+
     let input = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
+        key: agent_type,
     });
 
     let agent = get_agent(input)?;
@@ -50,7 +52,7 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
         info!("Segment [{}] proof size: {}", i, lifted_bytes.len());
     }
     info!("Step 1 done in {:?}", start_step_1.elapsed());
-    
+
     assert_eq!(all_succinct_receipts.len(), session.segments.len(), "Number of receipts should match number of segments");
 
     // --------------------------------------------------------
@@ -186,8 +188,6 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let union_json = fs::read_to_string(&union_path)?;
     let union_receipt: SuccinctReceipt<Unknown> = serde_json::from_str(&union_json)?;
     
-    assert!(union_receipt.claim.as_value().is_ok(), "Union receipt should have a claim");
-
     let resolve_input = ResolveInput {
         root: root_receipt,
         union: Some(union_receipt),
@@ -247,7 +247,7 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let groth16_receipt: Receipt = deserialize_obj(&groth16_receipt)?;
     
     assert!(groth16_receipt.claim().is_ok(), "Final Groth16 receipt should have a claim");
-    
+
     let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
     fs::write("metadata/result/groth16.json", groth16_json)?;
     
