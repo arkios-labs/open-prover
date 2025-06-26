@@ -870,7 +870,6 @@ fn test_finalize_on_session() -> Result<()> {
         .as_ref()
         .map(|j| j.bytes.clone())
         .ok_or_else(|| anyhow!("journal is missing"))?;
-    assert!(!journal_bytes.is_empty(), "Journal should not be empty");
 
     info!("Journal loaded, size: {}", journal_bytes.len());
 

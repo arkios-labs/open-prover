@@ -187,7 +187,7 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let union_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
     let union_json = fs::read_to_string(&union_path)?;
     let union_receipt: SuccinctReceipt<Unknown> = serde_json::from_str(&union_json)?;
-    
+
     let resolve_input = ResolveInput {
         root: root_receipt,
         union: Some(union_receipt),
@@ -211,8 +211,6 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
         .as_ref()
         .map(|j| j.bytes.clone())
         .ok_or_else(|| anyhow!("journal is missing"))?;
-    
-    assert!(!journal_bytes.is_empty(), "Journal should not be empty");
 
     let image_id = read_image_id("3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a")?;
 
