@@ -271,7 +271,7 @@ impl Agent for RiscZeroAgent {
         serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
     }
 
-    async fn stark2snark(&self, rollup_receipt: Vec<u8>) -> Result<Vec<u8>> {
+    async fn snark(&self, rollup_receipt: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::stark2snark()");
 
         let work_dir = tempdir().context("Failed to create tmpdir")?;
@@ -913,7 +913,7 @@ async fn test_stark2snark() -> Result<()> {
     );
 
     let groth16_receipt = agent_ref
-        .stark2snark(stark_receipt_bytes)
+        .snark(stark_receipt_bytes)
         .await
         .expect("stark2snark conversion failed: could not convert stark receipt to snark");
 

@@ -236,7 +236,7 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let start_step_7 = Instant::now();
 
     let groth16_receipt = agent_ref
-        .stark2snark(rollup_receipt)
+        .snark(rollup_receipt)
         .await
         .expect("stark2snark conversion failed: could not convert stark receipt to snark");
     
