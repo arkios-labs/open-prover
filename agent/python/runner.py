@@ -9,7 +9,7 @@ import ray
 from common.types import TaskType
 from loader import load_root_receipt, load_unioned_receipt, load_resolved_receipt, \
     load_session, load_stark_receipt
-from models.model import ResolveInput, FinalizeInput, clean_none
+from models.model import ResolveInput, FinalizeInput
 from tasks.task_runner import run_task_remote
 
 
@@ -134,9 +134,9 @@ def run_union_with_ray(inputs: List[bytes], output_path: str = "../metadata/kecc
 
 def run_resolve_with_ray(output_path: str = "../metadata/resolved_receipt.json") -> bytes:
     print("Loading root receipt...")
-    root = clean_none(load_root_receipt())
+    root = load_root_receipt()
     print("Loading unioned receipt...")
-    union = clean_none(load_unioned_receipt())
+    union = load_unioned_receipt()
     print("Loading assumption receipts...")
 
     session = load_session()
@@ -188,7 +188,7 @@ def run_resolve_with_ray(output_path: str = "../metadata/resolved_receipt.json")
 
 def run_finalize_with_ray(output_path: str = "../metadata/result/stark.json") -> bytes:
     print("Loading resolved receipt...")
-    root = clean_none(load_resolved_receipt())
+    root = load_resolved_receipt()
     print("Loading session and extracting journal...")
 
     session = load_session()

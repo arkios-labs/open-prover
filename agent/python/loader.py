@@ -1,7 +1,7 @@
 import json
 from typing import List
 
-from models.model import LiftedReceipt, SerializableKeccakRequest, KeccakReceipt, convert_keccak_request_to_local
+from models.model import LiftedReceipt, SerializableKeccakRequest, KeccakReceipt
 
 
 def load_session() -> dict:
@@ -22,11 +22,7 @@ def load_keccak_requests() -> List[bytes]:
 
     for keccak_req_data in session.get("pending_keccaks", []):
         keccak_req = SerializableKeccakRequest.model_validate(keccak_req_data)
-
-        # ProveKeccakRequestLocal 형식으로 변환
-        local_req = convert_keccak_request_to_local(keccak_req)
-
-        keccak_json = local_req.model_dump_json(by_alias=True)
+        keccak_json = keccak_req.model_dump_json(by_alias=True)
         keccak_requests.append(keccak_json.encode())
 
     return keccak_requests

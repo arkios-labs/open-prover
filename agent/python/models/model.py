@@ -4,74 +4,77 @@ from pydantic import BaseModel, Field
 
 
 class PrePostValue(BaseModel):
-    pc: int = Field(..., alias="pc")
-    merkle_root: List[int] = Field(..., alias="merkle_root")
+    pc: int = Field(...)
+    merkle_root: List[int] = Field(...)
+
 
 class PrePost(BaseModel):
-    value: PrePostValue = Field(..., alias="Value")
+    Value: PrePostValue = Field(...)
 
 
 class Input(BaseModel):
-    pruned: List[int] = Field(..., alias="Pruned")
+    Pruned: List[int] = Field(...)
 
 
 class AssumptionValue(BaseModel):
-    claim: List[int] = Field(..., alias="claim")
-    control_root: List[int] = Field(..., alias="control_root")
+    claim: List[int] = Field(...)
+    control_root: List[int] = Field(...)
 
 
 class Assumption(BaseModel):
-    value: AssumptionValue = Field(..., alias="Value")
+    Value: AssumptionValue = Field(...)
 
 
 class Assumptions(BaseModel):
-    value: List[Assumption] = Field(..., alias="Value")
+    Value: List[Assumption] = Field(...)
 
 
 class Journal(BaseModel):
-    value: List[Any] = Field(..., alias="Value")
+    Value: List[Any] = Field(...)
 
 
 class OutputValue(BaseModel):
-    journal: Journal = Field(..., alias="journal")
-    assumptions: Assumptions = Field(..., alias="assumptions")
+    journal: Journal = Field(...)
+    assumptions: Assumptions = Field(...)
 
 
 class Output(BaseModel):
-    value: Optional[OutputValue] = Field(None, alias="Value")
+    Value: Optional[OutputValue] = Field(None)
 
 
 class ClaimValue(BaseModel):
-    pre: PrePost = Field(..., alias="pre")
-    post: PrePost = Field(..., alias="post")
-    exit_code: Any = Field(..., alias="exit_code")
-    input: Input = Field(..., alias="input")
-    output: Output = Field(..., alias="output")
+    pre: PrePost = Field(...)
+    post: PrePost = Field(...)
+    exit_code: Any = Field(...)
+    input: Input = Field(...)
+    output: Output = Field(...)
 
 
 class Claim(BaseModel):
-    value: ClaimValue = Field(..., alias="Value")
+    Value: ClaimValue = Field(...)
+
 
 class ControlInclusionProof(BaseModel):
-    index: int = Field(..., alias="index")
-    digests: List[List[int]] = Field(..., alias="digests")
+    index: int = Field(...)
+    digests: List[List[int]] = Field(...)
+
 
 class LiftedReceipt(BaseModel):
-    seal: List[int] = Field(..., alias="seal")
-    control_id: List[int] = Field(..., alias="control_id")
-    claim: Claim = Field(..., alias="claim")
-    hashfn: str = Field(..., alias="hashfn")
-    verifier_parameters: List[int] = Field(..., alias="verifier_parameters")
-    control_inclusion_proof: ControlInclusionProof = Field(..., alias="control_inclusion_proof")
+    seal: List[int] = Field(...)
+    control_id: List[int] = Field(...)
+    claim: Claim = Field(...)
+    hashfn: str = Field(...)
+    verifier_parameters: List[int] = Field(...)
+    control_inclusion_proof: ControlInclusionProof = Field(...)
 
 
 class Digest(BaseModel):
-    digests: List[List[int]] = Field(..., alias="digests")
+    digests: List[List[int]] = Field(...)
 
 
 class MemoryImage(BaseModel):
     pages: Dict[int, List[int]]  # Maps page ID to content (int list)
-    digests: Dict[str, List[int]] = Field(..., alias="digests")  # Changed from List to Dict
+    digests: Dict[str, List[int]] = Field(...)  # Changed from List to Dict
     dirty: Set[int]
 
 
@@ -130,21 +133,11 @@ class UnresolvedAssumption(BaseModel):
 class SessionAssumption(BaseModel):
     claim: Optional[List[int]] = None
     control_root: Optional[List[int]] = None
-    unresolved: Optional[UnresolvedAssumption] = None
-    Unresolved: Optional[UnresolvedAssumption] = None  # 실제 JSON에서 사용하는 키
-
+    Unresolved: Optional[UnresolvedAssumption] = Field(None)
 
 # Rust: KeccakState = [u64; 25]
 class KeccakState(BaseModel):
     state: List[int]  # 25개의 u64 값
-
-
-# Rust: ProveKeccakRequestLocal
-class ProveKeccakRequestLocal(BaseModel):
-    claim_digest: List[int]  # Digest (32 bytes as int array)
-    po2: int  # usize
-    control_root: List[int]  # Digest (32 bytes as int array)
-    input: List[List[int]]  # Vec<[u64; 25]> - 각 내부 리스트는 25개의 정수
 
 
 class SerializableKeccakRequest(BaseModel):
@@ -155,7 +148,7 @@ class SerializableKeccakRequest(BaseModel):
 
 
 class KeccakReceiptClaim(BaseModel):
-    pruned: List[int] = Field(..., alias="Pruned")  # []int64 -> List[int]
+    Pruned: List[int] = Field(...)  # []int64 -> List[int]
 
 
 class KeccakReceiptControlInclusionProof(BaseModel):
@@ -194,24 +187,3 @@ class Session(BaseModel):
     assumptions: List[List[SessionAssumption]]  # SessionAssumption으로 변경
     pending_zkrs: List[Any]
     pending_keccaks: List[SerializableKeccakRequest]
-
-def convert_keccak_request_to_local(keccak_req: SerializableKeccakRequest) -> ProveKeccakRequestLocal:
-    """Convert SerializableKeccakRequest to ProveKeccakRequestLocal format."""
-    # claim_digest와 control_root는 이미 올바른 형식이므로 그대로 사용
-    # (32개의 정수 배열로 표현된 Digest)
-
-    return ProveKeccakRequestLocal(
-        claim_digest=keccak_req.claim_digest,
-        po2=keccak_req.po2,
-        control_root=keccak_req.control_root,
-        input=keccak_req.input
-    )
-
-def clean_none(obj):
-    """Recursively remove None values from dict/list"""
-    if isinstance(obj, dict):
-        return {k: clean_none(v) for k, v in obj.items() if v is not None}
-    elif isinstance(obj, list):
-        return [clean_none(x) for x in obj if x is not None]
-    else:
-        return obj
