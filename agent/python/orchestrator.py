@@ -7,17 +7,21 @@ from common.types import TaskType
 from loader import load_lifted_receipts, load_session_with_segments, load_keccak_requests, load_keccak_receipts
 from runner import run_join_with_ray, run_prove_with_ray, run_keccak_with_ray, run_union_with_ray, \
     run_resolve_with_ray, run_finalize_with_ray, run_snark_with_ray
-
+import time
 
 def main(task_type: TaskType):
     if task_type == TaskType.JOIN:
+        start = time.time()
         input_data = load_lifted_receipts()
         result = run_join_with_ray(input_data)
         with open("../metadata/root_receipt.json", "wb") as f:
             f.write(result)
         print("JOIN result saved to ../metadata/root_receipt.json")
+        print(f"Elapsed time: {time.time() - start:.2f} seconds")
         return result
     elif task_type == TaskType.PROVE:
+        start = time.time()
+
         print("Loading segment data...")
         input_data = load_session_with_segments()
         print(f"Loaded {len(input_data)} segments for PROVE")
@@ -28,8 +32,12 @@ def main(task_type: TaskType):
         with open("../metadata/lifted_receipts.json", "w") as f:
             json.dump([json.loads(result.decode()) for result in results], f, indent=2)
         print(f"PROVE results saved to ../metadata/lifted_receipts.json ({len(results)} segments)")
+        print(f"Elapsed time: {time.time() - start:.2f} seconds")
+
         return results
     elif task_type == TaskType.KECCAK:
+        start = time.time()
+
         print("Starting KECCAK test...")
 
         print("Loading keccak request data...")
@@ -40,8 +48,12 @@ def main(task_type: TaskType):
         results = run_keccak_with_ray(keccak_requests)
 
         print("KECCAK test completed successfully")
+        print(f"Elapsed time: {time.time() - start:.2f} seconds")
+
         return results
     elif task_type == TaskType.UNION:
+        start = time.time()
+
         print("Starting UNION test...")
 
         print("Loading keccak receipt data...")
@@ -55,21 +67,31 @@ def main(task_type: TaskType):
         result = run_union_with_ray(keccak_receipts)
 
         print("UNION test completed successfully")
+        print(f"Elapsed time: {time.time() - start:.2f} seconds")
         return result
     elif task_type == TaskType.RESOLVE:
+        start = time.time()
+
         print("Starting RESOLVE test...")
         result = run_resolve_with_ray()
         print("RESOLVE test completed successfully")
+        print(f"Elapsed time: {time.time() - start:.2f} seconds")
         return result
     elif task_type == TaskType.FINALIZE:
+        start = time.time()
+
         print("Starting FINALIZE test...")
         result = run_finalize_with_ray()
         print("FINALIZE test completed successfully")
+        print(f"Elapsed time: {time.time() - start:.2f} seconds")
         return result
     elif task_type == TaskType.SNARK:
+        start = time.time()
+
         print("Starting SNARK test...")
         result = run_snark_with_ray()
         print("SNARK test completed successfully")
+        print(f"Elapsed time: {time.time() - start:.2f} seconds")
         return result
     else:
         raise NotImplementedError(f"Task type {task_type.value} not yet implemented in main.")
