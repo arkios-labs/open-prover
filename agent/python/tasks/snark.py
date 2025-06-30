@@ -42,8 +42,13 @@ class SnarkTask(TaskHandler):
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-            app_path = Path("../")
-            
+            arch = platform.machine().lower()
+
+            if arch == "arm64":
+                app_path = Path("../")
+            else:
+                app_path = Path("/home/ubuntu/snark")
+
             print(f"Working directory: {work_dir}")
             print(f"App path: {app_path.resolve()}")
             
