@@ -72,6 +72,8 @@ pub trait Agent {
     fn union(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn prepare_snark(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn get_snark_receipt(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     async fn snark(&self, data: Vec<u8>) -> Result<Vec<u8>>;
 }
 

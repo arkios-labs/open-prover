@@ -65,6 +65,12 @@ class TaskHandler(ABC):
             input_data = inputs[0]
             print(f"FINALIZE input data size: {len(input_data)} bytes")
             print(f"FINALIZE input data preview: {input_data[:200]}...")
+        elif (task_type == "SNARK", "PREPARE_SNARK"):
+            if len(inputs) != 1:
+                raise ValueError(f"SNARK task expects exactly 1 input, got {len(inputs)}")
+            input_data = inputs[0]
+            print(f"SNARK input data size: {len(input_data)} bytes")
+            print(f"SNARK input data preview: {input_data[:200]}...")
         else:
             input_json = json.dumps([list(input) for input in inputs])
             input_data = input_json.encode()

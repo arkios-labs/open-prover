@@ -8,7 +8,7 @@ import ray
 
 from common.types import TaskType
 from loader import load_root_receipt, load_unioned_receipt, load_resolved_receipt, \
-    load_session
+    load_session, load_stark_receipt
 from models.model import ResolveInput, FinalizeInput, clean_none
 from tasks.task_runner import run_task_remote
 
@@ -241,15 +241,11 @@ def run_finalize_with_ray(output_path: str = "../metadata/result/stark.json") ->
 
     return stark_receipt
 
-def run_snark_with_ray(stark_path: str = "../metadata/result/finalized_receipt.json",
-                       output_path: str = "../metadata/result/groth16.json") -> bytes:
 
-    print(f"Loading STARK receipt from: {stark_path}")
-    if not os.path.exists(stark_path):
-        raise FileNotFoundError(f"STARK receipt file not found: {stark_path}")
+def run_snark_with_ray(output_path: str = "../metadata/result/groth16.json") -> bytes:
+    print("Loading STARK receipt...")
 
-    with open(stark_path, "rb") as f:
-        stark_receipt_bytes = f.read()
+    stark_receipt_bytes = load_stark_receipt()
 
     if not stark_receipt_bytes:
         raise ValueError("STARK receipt bytes should not be empty")

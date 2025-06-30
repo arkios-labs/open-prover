@@ -4,8 +4,7 @@ use crate::tasks::{
     Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession, convert,
     deserialize_obj, serialize_obj,
 };
-use anyhow::{Context, bail};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use hex::FromHex;
 use nix::{sys::stat, unistd};
@@ -18,7 +17,7 @@ use risc0_zkvm::{
 };
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{env, fs, rc::Rc};
@@ -125,8 +124,7 @@ impl Agent for RiscZeroAgent {
         }
 
         let prove_keccak_request_local: ProveKeccakRequestLocal =
-            deserialize_obj(&input)
-                .context("Failed to deserialize keccak request")?;
+            deserialize_obj(&input).context("Failed to deserialize keccak request")?;
 
         // Conversion is required because the library's `ProveKeccakRequest` type doesn't support deserialization
         let prove_keccak_request = convert(prove_keccak_request_local);
@@ -295,105 +293,114 @@ impl Agent for RiscZeroAgent {
         serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
     }
 
-    async fn snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::snark()");
+    fn prepare_snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        info!("RiscZeroTask::prepare_snark()");
 
         if input.is_empty() {
-            bail!("snark input is empty");
+            bail!("prepare_snark input is empty");
         }
 
-        let work_dir = tempdir().context("Failed to create tmpdir")?;
+        let work_dir = tempdir()?.keep();
 
-        // // 1. Deserialize rollup receipt
         let receipt: Receipt = deserialize_obj(&input)?;
 
-        // // 2. Get succinct receipt
         let succinct_receipt = receipt.inner.succinct()?;
 
-        // 3. generate identity predicate
+        info!("start identity_p254");
         let receipt_ident = identity_p254(succinct_receipt).context("identity predicate failed")?;
 
-        // 4. Convert seal to JSON
         let seal_bytes = receipt_ident.get_seal_bytes();
         info!("Running seal-to-json");
 
-        let seal_path = work_dir.path().join("input.json");
+        let seal_path = work_dir.join("input.json");
         let seal_json = File::create(&seal_path)?;
         let mut seal_reader = Cursor::new(&seal_bytes);
         seal_to_json(&mut seal_reader, &seal_json)?;
 
-        // 5. Prepare to run stark_verify
-        let app_path = Path::new("./");
-        if !app_path.exists() {
-            bail!("Missing app path");
-        }
-        info!("Running stark_verify");
-        let witness_file = work_dir.path().join(WITNESS_FILE);
+        // receipt.claim()의 결과를 안전하게 처리
+        let claim_result = receipt.claim();
+        let claim_json = match claim_result {
+            Ok(claim) => serde_json::to_value(claim)?,
+            Err(_) => serde_json::Value::Null, // VerificationError가 발생하면 null로 처리
+        };
 
-        // Create a named pipe for the witness data so that the prover can start before
-        // the witness generation is complete.
+        // seal 파일 경로와 receipt 정보를 함께 반환
+        let result = serde_json::json!({
+            "seal_path": seal_path.to_string_lossy().to_string(),
+            "receipt_claim": claim_json,
+            "journal_bytes": receipt.journal.bytes
+        });
 
-        unistd::mkfifo(&witness_file, stat::Mode::S_IRWXU).context("Failed to create fifo")?;
+        let result_bytes = serde_json::to_string(&result)?.into_bytes();
 
-        // Spawn stark_verify process
-        let mut wit_gen = Command::new(app_path.join(STARK_VERIFY_BIN))
-            .arg(&seal_path)
-            .arg(&witness_file)
-            .spawn()?;
+        info!("Seal file created at: {:?}", seal_path);
+        info!("prepare_snark completed successfully");
 
-        info!("Running gnark");
-        let cs_file = app_path.join("stark_verify.cs");
-        let pk_file = app_path.join("stark_verify_final.pk.dmp");
-        let proof_file = work_dir.path().join(PROOF_FILE);
+        Ok(result_bytes)
+    }
 
-        // Spawn prover process
-        let mut prover = Command::new(app_path.join(PROVER_BIN))
-            .arg(cs_file)
-            .arg(pk_file)
-            .arg(witness_file)
-            .arg(&proof_file)
-            .spawn()?;
+    fn get_snark_receipt(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        info!("RiscZeroTask::get_snark_receipt()");
 
-        // Wait for stark_verify to complete
-        info!("Running prover");
-        match wit_gen.wait().await {
-            // Make sure the prover is always killed, otherwise it will wait forever
-            Err(err) => {
-                prover.kill().await.expect("Failed to kill prover process");
-                bail!(err);
-            }
-            Ok(status) if !status.success() => {
-                prover.kill().await.expect("Failed to kill prover process");
-                bail!("Failed to run stark_verify");
-            }
-            _ => {}
+        if input.is_empty() {
+            bail!("get_snark_receipt input is empty");
         }
 
-        // stark_verify completed successfully, now wait for prover
-        if !prover.wait().await?.success() {
-            bail!("Failed to run gnark prover");
-        }
+        // 입력을 JSON으로 파싱하여 proof 내용과 receipt 정보를 받음
+        let input_str = String::from_utf8(input).context("Failed to parse input as UTF-8")?;
 
-        info!("Parsing proof");
-        let mut proof = File::open(proof_file)?;
-        let mut contents = String::new();
-        proof.read_to_string(&mut contents)?;
+        let input_json: serde_json::Value =
+            serde_json::from_str(&input_str).context("Failed to parse input JSON")?;
 
-        let proof_json: Groth16ProofJson = serde_json::from_str(&contents)?;
-        let seal: Groth16Seal = proof_json.try_into()?;
+        let proof_content = input_json["proof_content"]
+            .as_str()
+            .context("Missing proof_content in input")?;
+
+        let receipt_claim_json = &input_json["receipt_claim"];
+        let journal_bytes = input_json["journal_bytes"]
+            .as_array()
+            .context("Missing journal_bytes in input")?
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u8)
+            .collect::<Vec<u8>>();
+
+        info!("Parsing proof content ({} bytes)", proof_content.len());
+
+        let proof_json: Groth16ProofJson =
+            serde_json::from_str(proof_content).context("Failed to parse proof JSON")?;
+
+        let seal: Groth16Seal = proof_json
+            .try_into()
+            .context("Failed to convert proof JSON to Groth16Seal")?;
+
+        // receipt claim을 다시 생성
+        let claim = serde_json::from_value(receipt_claim_json.clone())
+            .context("Failed to deserialize receipt claim")?;
 
         let snark_receipt = Groth16Receipt::new(
             seal.to_vec(),
-            receipt.claim().context("Receipt missing claim")?.clone(),
+            claim,
             Groth16ReceiptVerifierParameters::default().digest(),
         );
 
-        let snark_receipt =
-            Receipt::new(InnerReceipt::Groth16(snark_receipt), receipt.journal.bytes);
+        let snark_receipt = Receipt::new(InnerReceipt::Groth16(snark_receipt), journal_bytes);
 
-        let serialized = serialize_obj(&snark_receipt).context("Failed to serialize receipt")?;
+        let serialized =
+            serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;
+
+        info!(
+            "SNARK receipt created successfully ({} bytes)",
+            serialized.len()
+        );
 
         Ok(serialized)
+    }
+
+    async fn snark(&self, _input: Vec<u8>) -> Result<Vec<u8>> {
+        info!(
+            "RiscZeroTask::snark() - legacy method, use prepare_snark + get_snark_receipt instead"
+        );
+        bail!("snark method is deprecated, use prepare_snark + get_snark_receipt instead")
     }
 }
 
@@ -965,6 +972,109 @@ async fn test_stark2snark() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_prepare_snark() -> Result<()> {
+    use std::time::Instant;
+    use std::{env, fs};
+    use tracing::info;
+
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
+
+    let input = Box::new(EnvProvider { key: agent_type });
+
+    let agent = get_agent(input)?;
+    let agent_ref: &dyn Agent = agent.as_ref();
+
+    // finalized_receipt.json에서 STARK receipt 로드
+    let stark_path = env::current_dir()?.join("metadata/result/finalized_receipt.json");
+    info!("Loading STARK receipt from: {:?}", stark_path);
+
+    let stark_json = fs::read_to_string(&stark_path)?;
+    let stark_receipt: Receipt = serde_json::from_str(&stark_json)?;
+    assert!(
+        stark_receipt.claim().is_ok(),
+        "STARK receipt should have a claim"
+    );
+
+    info!("STARK receipt loaded successfully");
+
+    // STARK receipt를 바이너리로 직렬화
+    let stark_receipt_bytes = serialize_obj(&stark_receipt)?;
+    assert!(
+        !stark_receipt_bytes.is_empty(),
+        "STARK receipt bytes should not be empty"
+    );
+
+    info!(
+        "STARK receipt serialized, size: {} bytes",
+        stark_receipt_bytes.len()
+    );
+
+    // prepare_snark 호출
+    let start_prepare = Instant::now();
+    let prepare_result = agent_ref.prepare_snark(stark_receipt_bytes)?;
+    assert!(
+        !prepare_result.is_empty(),
+        "prepare_snark result should not be empty"
+    );
+
+    info!("prepare_snark completed in {:?}", start_prepare.elapsed());
+
+    // 결과를 JSON으로 파싱하여 검증
+    let prepare_result_str = String::from_utf8(prepare_result.clone())?;
+    let prepare_json: serde_json::Value = serde_json::from_str(&prepare_result_str)?;
+
+    // 필수 필드들이 있는지 확인
+    assert!(
+        prepare_json.get("seal_path").is_some(),
+        "prepare_snark result should contain seal_path"
+    );
+    assert!(
+        prepare_json.get("receipt_claim").is_some(),
+        "prepare_snark result should contain receipt_claim"
+    );
+    assert!(
+        prepare_json.get("journal_bytes").is_some(),
+        "prepare_snark result should contain journal_bytes"
+    );
+
+    // seal_path가 실제로 존재하는지 확인
+    let seal_path = prepare_json["seal_path"].as_str().unwrap();
+    assert!(
+        fs::metadata(seal_path).is_ok(),
+        "Seal file should exist at: {}",
+        seal_path
+    );
+
+    // seal 파일 내용 확인
+    let seal_content = fs::read_to_string(seal_path)?;
+    assert!(!seal_content.is_empty(), "Seal file should not be empty");
+
+    // journal_bytes가 원본과 일치하는지 확인
+    let journal_bytes = prepare_json["journal_bytes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect::<Vec<u8>>();
+
+    assert_eq!(
+        journal_bytes, stark_receipt.journal.bytes,
+        "Journal bytes should match original STARK receipt"
+    );
+
+    info!("prepare_snark test completed successfully");
+    info!("Seal file created at: {}", seal_path);
+    info!("Seal file size: {} bytes", seal_content.len());
+
+    Ok(())
+}
+
 pub(crate) fn read_image_id(image_id: &str) -> Result<Digest> {
     Digest::from_hex(image_id).context("Failed to convert imageId file to digest from_hex")
 }
