@@ -129,7 +129,8 @@ class SnarkTask(TaskHandler):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            
+
+
             # stark_verify 완료 대기
             print("Waiting for stark_verify to complete...")
             wit_status = await wit_gen.wait()
@@ -166,20 +167,8 @@ class SnarkTask(TaskHandler):
             
             # 4. get_snark_receipt 호출: proof 내용과 receipt 정보를 전달하여 SNARK receipt 생성
             print("Step 2: Calling get_snark_receipt...")
-            
-            # proof 내용을 JSON 문자열로 변환
-            proof_content = proof_bytes.decode('utf-8')
-            
-            # get_snark_receipt에 전달할 입력 데이터 구성
-            get_snark_input = {
-                "proof_content": proof_content,
-                "receipt_claim": receipt_claim,
-                "journal_bytes": journal_bytes
-            }
-            
-            get_snark_input_bytes = json.dumps(get_snark_input).encode('utf-8')
-            
-            snark_receipt_bytes = self._call_rust_binary("GET_SNARK_RECEIPT", [get_snark_input_bytes])
+
+            snark_receipt_bytes = self._call_rust_binary("GET_SNARK_RECEIPT", [receipt_claim, journal_bytes, proof_bytes])
             
             if not snark_receipt_bytes:
                 raise ValueError("get_snark_receipt returned empty result")

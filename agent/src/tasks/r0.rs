@@ -12,8 +12,9 @@ use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
     AssumptionReceipt, Digest, Groth16ProofJson, Groth16Receipt, Groth16ReceiptVerifierParameters,
-    Groth16Seal, InnerAssumptionReceipt, InnerReceipt, ProverOpts, ProverServer, Receipt,
-    ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server, seal_to_json,
+    Groth16Seal, InnerAssumptionReceipt, InnerReceipt, MaybePruned, ProverOpts, ProverServer,
+    Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
+    seal_to_json,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -21,6 +22,7 @@ use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{env, fs, rc::Rc};
+use std::any::Any;
 use tempfile::tempdir;
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -304,6 +306,7 @@ impl Agent for RiscZeroAgent {
 
         let receipt: Receipt = deserialize_obj(&input)?;
 
+        let test = receipt.claim();
         let succinct_receipt = receipt.inner.succinct()?;
 
         info!("start identity_p254");
@@ -317,14 +320,12 @@ impl Agent for RiscZeroAgent {
         let mut seal_reader = Cursor::new(&seal_bytes);
         seal_to_json(&mut seal_reader, &seal_json)?;
 
-        // receipt.claim()의 결과를 안전하게 처리
         let claim_result = receipt.claim();
         let claim_json = match claim_result {
             Ok(claim) => serde_json::to_value(claim)?,
-            Err(_) => serde_json::Value::Null, // VerificationError가 발생하면 null로 처리
+            Err(_) => serde_json::Value::Null,
         };
 
-        // seal 파일 경로와 receipt 정보를 함께 반환
         let result = serde_json::json!({
             "seal_path": seal_path.to_string_lossy().to_string(),
             "receipt_claim": claim_json,
@@ -346,36 +347,26 @@ impl Agent for RiscZeroAgent {
             bail!("get_snark_receipt input is empty");
         }
 
-        // 입력을 JSON으로 파싱하여 proof 내용과 receipt 정보를 받음
-        let input_str = String::from_utf8(input).context("Failed to parse input as UTF-8")?;
+        let inputs: Vec<Vec<u8>> =
+            serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
 
-        let input_json: serde_json::Value =
-            serde_json::from_str(&input_str).context("Failed to parse input JSON")?;
+        if inputs.len() != 3 {
+            bail!(
+                "Expected exactly two inputs for snark, got {}",
+                inputs.len()
+            );
+        }
 
-        let proof_content = input_json["proof_content"]
-            .as_str()
-            .context("Missing proof_content in input")?;
+        let claim: MaybePruned<ReceiptClaim> = deserialize_obj(&inputs[0]).context("Failed to parse claim")?;
 
-        let receipt_claim_json = &input_json["receipt_claim"];
-        let journal_bytes = input_json["journal_bytes"]
-            .as_array()
-            .context("Missing journal_bytes in input")?
-            .iter()
-            .map(|v| v.as_u64().unwrap() as u8)
-            .collect::<Vec<u8>>();
-
-        info!("Parsing proof content ({} bytes)", proof_content.len());
+        let journal = inputs[1].clone();
 
         let proof_json: Groth16ProofJson =
-            serde_json::from_str(proof_content).context("Failed to parse proof JSON")?;
+            deserialize_obj(&inputs[2]).context("Failed to parse input JSON")?;
 
         let seal: Groth16Seal = proof_json
             .try_into()
             .context("Failed to convert proof JSON to Groth16Seal")?;
-
-        // receipt claim을 다시 생성
-        let claim = serde_json::from_value(receipt_claim_json.clone())
-            .context("Failed to deserialize receipt claim")?;
 
         let snark_receipt = Groth16Receipt::new(
             seal.to_vec(),
@@ -383,7 +374,7 @@ impl Agent for RiscZeroAgent {
             Groth16ReceiptVerifierParameters::default().digest(),
         );
 
-        let snark_receipt = Receipt::new(InnerReceipt::Groth16(snark_receipt), journal_bytes);
+        let snark_receipt = Receipt::new(InnerReceipt::Groth16(snark_receipt), journal);
 
         let serialized =
             serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;
@@ -990,7 +981,6 @@ fn test_prepare_snark() -> Result<()> {
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
 
-    // finalized_receipt.json에서 STARK receipt 로드
     let stark_path = env::current_dir()?.join("metadata/result/finalized_receipt.json");
     info!("Loading STARK receipt from: {:?}", stark_path);
 
@@ -1003,7 +993,6 @@ fn test_prepare_snark() -> Result<()> {
 
     info!("STARK receipt loaded successfully");
 
-    // STARK receipt를 바이너리로 직렬화
     let stark_receipt_bytes = serialize_obj(&stark_receipt)?;
     assert!(
         !stark_receipt_bytes.is_empty(),
@@ -1015,7 +1004,6 @@ fn test_prepare_snark() -> Result<()> {
         stark_receipt_bytes.len()
     );
 
-    // prepare_snark 호출
     let start_prepare = Instant::now();
     let prepare_result = agent_ref.prepare_snark(stark_receipt_bytes)?;
     assert!(
@@ -1025,11 +1013,9 @@ fn test_prepare_snark() -> Result<()> {
 
     info!("prepare_snark completed in {:?}", start_prepare.elapsed());
 
-    // 결과를 JSON으로 파싱하여 검증
     let prepare_result_str = String::from_utf8(prepare_result.clone())?;
     let prepare_json: serde_json::Value = serde_json::from_str(&prepare_result_str)?;
 
-    // 필수 필드들이 있는지 확인
     assert!(
         prepare_json.get("seal_path").is_some(),
         "prepare_snark result should contain seal_path"
@@ -1043,7 +1029,6 @@ fn test_prepare_snark() -> Result<()> {
         "prepare_snark result should contain journal_bytes"
     );
 
-    // seal_path가 실제로 존재하는지 확인
     let seal_path = prepare_json["seal_path"].as_str().unwrap();
     assert!(
         fs::metadata(seal_path).is_ok(),
@@ -1051,11 +1036,9 @@ fn test_prepare_snark() -> Result<()> {
         seal_path
     );
 
-    // seal 파일 내용 확인
     let seal_content = fs::read_to_string(seal_path)?;
     assert!(!seal_content.is_empty(), "Seal file should not be empty");
 
-    // journal_bytes가 원본과 일치하는지 확인
     let journal_bytes = prepare_json["journal_bytes"]
         .as_array()
         .unwrap()
