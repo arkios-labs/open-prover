@@ -111,7 +111,7 @@ class TaskHandler(ABC):
                 stderr=subprocess.PIPE,
                 env=env,
                 check=True,
-                timeout=300  # 5 minutes timeout
+                timeout=600  # 5 minutes timeout
             )
 
             print(f"Rust binary stdout length: {len(result.stdout)}")

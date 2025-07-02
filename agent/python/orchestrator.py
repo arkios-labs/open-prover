@@ -107,7 +107,7 @@ def main(task_type: TaskType, po2: int, cycle: int):
         start = time.time()
 
         print("Starting SNARK test...")
-        result = run_snark_with_ray()
+        result = run_snark_with_ray(po2, cycle)
         print("SNARK test completed successfully")
         print(f"Elapsed time: {time.time() - start:.2f} seconds")
         return result
