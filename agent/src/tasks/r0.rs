@@ -16,13 +16,13 @@ use risc0_zkvm::{
     Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
     seal_to_json,
 };
+use std::any::Any;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{env, fs, rc::Rc};
-use std::any::Any;
 use tempfile::tempdir;
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -306,7 +306,6 @@ impl Agent for RiscZeroAgent {
 
         let receipt: Receipt = deserialize_obj(&input)?;
 
-        let test = receipt.claim();
         let succinct_receipt = receipt.inner.succinct()?;
 
         info!("start identity_p254");
@@ -320,19 +319,7 @@ impl Agent for RiscZeroAgent {
         let mut seal_reader = Cursor::new(&seal_bytes);
         seal_to_json(&mut seal_reader, &seal_json)?;
 
-        let claim_result = receipt.claim();
-        let claim_json = match claim_result {
-            Ok(claim) => serde_json::to_value(claim)?,
-            Err(_) => serde_json::Value::Null,
-        };
-
-        let result = serde_json::json!({
-            "seal_path": seal_path.to_string_lossy().to_string(),
-            "receipt_claim": claim_json,
-            "journal_bytes": receipt.journal.bytes
-        });
-
-        let result_bytes = serde_json::to_string(&result)?.into_bytes();
+        let result_bytes = serialize_obj(&seal_path.to_string_lossy().to_string())?;
 
         info!("Seal file created at: {:?}", seal_path);
         info!("prepare_snark completed successfully");
@@ -350,19 +337,18 @@ impl Agent for RiscZeroAgent {
         let inputs: Vec<Vec<u8>> =
             serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
 
-        if inputs.len() != 3 {
+        if inputs.len() != 2 {
             bail!(
                 "Expected exactly two inputs for snark, got {}",
                 inputs.len()
             );
         }
 
-        let claim: MaybePruned<ReceiptClaim> = deserialize_obj(&inputs[0]).context("Failed to parse claim")?;
-
-        let journal = inputs[1].clone();
+        let stark_receipt: Receipt =
+            deserialize_obj(&inputs[0]).context("Failed to parse stark_receipt")?;
 
         let proof_json: Groth16ProofJson =
-            deserialize_obj(&inputs[2]).context("Failed to parse input JSON")?;
+            deserialize_obj(&inputs[1]).context("Failed to parse input JSON")?;
 
         let seal: Groth16Seal = proof_json
             .try_into()
@@ -370,11 +356,14 @@ impl Agent for RiscZeroAgent {
 
         let snark_receipt = Groth16Receipt::new(
             seal.to_vec(),
-            claim,
+            stark_receipt.claim()?,
             Groth16ReceiptVerifierParameters::default().digest(),
         );
 
-        let snark_receipt = Receipt::new(InnerReceipt::Groth16(snark_receipt), journal);
+        let snark_receipt = Receipt::new(
+            InnerReceipt::Groth16(snark_receipt),
+            stark_receipt.journal.bytes,
+        );
 
         let serialized =
             serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;

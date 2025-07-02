@@ -62,14 +62,10 @@ class SnarkTask(TaskHandler):
             # prepare_snark 결과 파싱
             prepare_result_str = prepare_result_bytes.decode('utf-8')
             prepare_result = json.loads(prepare_result_str)
-            
-            seal_path = Path(prepare_result["seal_path"])
-            receipt_claim = prepare_result["receipt_claim"]
-            journal_bytes = prepare_result["journal_bytes"]
-            
+
+            seal_path = Path(prepare_result)
+
             print(f"Seal file path: {seal_path}")
-            print(f"Receipt claim: {receipt_claim}")
-            print(f"Journal bytes length: {len(journal_bytes)}")
             
             if not seal_path.exists():
                 raise FileNotFoundError(f"Seal file not found: {seal_path}")
@@ -168,7 +164,7 @@ class SnarkTask(TaskHandler):
             # 4. get_snark_receipt 호출: proof 내용과 receipt 정보를 전달하여 SNARK receipt 생성
             print("Step 2: Calling get_snark_receipt...")
 
-            snark_receipt_bytes = self._call_rust_binary("GET_SNARK_RECEIPT", [receipt_claim, journal_bytes, proof_bytes])
+            snark_receipt_bytes = self._call_rust_binary("GET_SNARK_RECEIPT", [stark_receipt_bytes, proof_bytes])
             
             if not snark_receipt_bytes:
                 raise ValueError("get_snark_receipt returned empty result")
