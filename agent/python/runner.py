@@ -47,7 +47,7 @@ def run_prove_with_ray(inputs: List[bytes]) -> List[bytes]:
     return results
 
 
-def run_keccak_with_ray(inputs: List[bytes], output_path: str = "../metadata/keccak/keccak_receipts.json") -> List[
+def run_keccak_with_ray(inputs: List[bytes], po2:int, cycle:int) -> List[
     bytes]:
     print(f"Ray로 KECCAK {len(inputs)}개 분산 실행 시작...")
     start_time = time.time()
@@ -68,15 +68,10 @@ def run_keccak_with_ray(inputs: List[bytes], output_path: str = "../metadata/kec
         except Exception as e:
             print(f"  [{i + 1}] 결과 디코딩 실패: {e}")
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(all_receipts, f, indent=2)
-    print(f"모든 KECCAK receipt가 {output_path}에 저장되었습니다.")
-
     return results
 
 
-def run_union_with_ray(inputs: List[bytes], output_path: str = "../metadata/keccak/unioned_receipt.json") -> bytes:
+def run_union_with_ray(inputs: List[bytes], po2:int, cycle:int) -> bytes:
     print(f"Ray로 UNION {len(inputs)}개 receipt 트리 구조 실행 시작...")
     start_time = time.time()
 
@@ -118,28 +113,17 @@ def run_union_with_ray(inputs: List[bytes], output_path: str = "../metadata/kecc
     print(f"UNION 완료: 최종 결과 크기: {len(final_result)} bytes")
     print(f"소요 시간: {elapsed:.2f}초, 총 입력 receipt: {receipt_count}개")
 
-    try:
-        receipt_json = final_result.decode()
-        receipt_data = json.loads(receipt_json)
-
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(receipt_data, f, indent=2)
-        print(f"Unioned receipt가 {output_path}에 저장되었습니다.")
-    except Exception as e:
-        print(f"결과 저장 실패: {e}")
-
     return final_result
 
 
-def run_resolve_with_ray(output_path: str = "../metadata/resolved_receipt.json") -> bytes:
+def run_resolve_with_ray(po2:int, cycle:int) -> bytes:
     print("Loading root receipt...")
-    root = load_root_receipt()
+    root = load_root_receipt(po2,cycle)
     print("Loading unioned receipt...")
-    union = load_unioned_receipt()
+    union = load_unioned_receipt(po2, cycle)
     print("Loading assumption receipts...")
 
-    session = load_session()
+    session = load_session(po2, cycle)
     assumptions = []
 
     for assumption_tuple in session.get("assumptions", []):
@@ -174,24 +158,15 @@ def run_resolve_with_ray(output_path: str = "../metadata/resolved_receipt.json")
     result = run_task_remote.remote(TaskType.RESOLVE.value, [input_bytes])
     resolved = ray.get(result)
 
-    try:
-        resolved_json = resolved.decode()
-        resolved_data = json.loads(resolved_json)
-        with open(output_path, "w") as f:
-            json.dump(resolved_data, f, indent=2)
-        print(f"Resolved receipt written to {output_path}")
-    except Exception as e:
-        print(f"Failed to save resolved receipt: {e}")
-
     return resolved
 
 
-def run_finalize_with_ray(output_path: str = "../metadata/result/stark.json") -> bytes:
+def run_finalize_with_ray(po2:int, cycle:int) -> bytes:
     print("Loading resolved receipt...")
-    root = load_resolved_receipt()
+    root = load_resolved_receipt(po2,cycle)
     print("Loading session and extracting journal...")
 
-    session = load_session()
+    session = load_session(po2,cycle)
     journal_data = session.get("journal", {})
 
     journal_bytes = journal_data.get("bytes", [])
@@ -231,21 +206,13 @@ def run_finalize_with_ray(output_path: str = "../metadata/result/stark.json") ->
     result = run_task_remote.remote(TaskType.FINALIZE.value, [input_bytes])
     stark_receipt = ray.get(result)
 
-    try:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "wb") as f:
-            f.write(stark_receipt)
-        print(f"Final STARK receipt written to {output_path}")
-    except Exception as e:
-        print(f"Failed to save STARK receipt: {e}")
-
     return stark_receipt
 
 
-def run_snark_with_ray(output_path: str = "../metadata/result/groth16.json") -> bytes:
+def run_snark_with_ray(po2:int, cycle:int) -> bytes:
     print("Loading STARK receipt...")
 
-    stark_receipt_bytes = load_stark_receipt()
+    stark_receipt_bytes = load_stark_receipt(po2, cycle)
 
     if not stark_receipt_bytes:
         raise ValueError("STARK receipt bytes should not be empty")
@@ -257,14 +224,5 @@ def run_snark_with_ray(output_path: str = "../metadata/result/groth16.json") -> 
 
     if isinstance(groth16_bytes, list):
         groth16_bytes = bytes(groth16_bytes)
-
-    try:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "wb") as f:
-            f.write(groth16_bytes)
-        print(f"Final Groth16 receipt written to {output_path}")
-    except Exception as e:
-        print(f"Failed to save Groth16 receipt: {e}")
-        raise
 
     return groth16_bytes

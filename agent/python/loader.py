@@ -2,22 +2,36 @@ import json
 from typing import List
 
 from models.model import LiftedReceipt, SerializableKeccakRequest, KeccakReceipt
+from pathlib import Path
 
 
-def load_session() -> dict:
-    with open("../metadata/session/session_4_segments.json", "r") as f:
+def load_session(po2: int, cycle: int) -> dict:
+    session_dir = Path(f"../metadata/po2_{po2}/session")
+    pattern = f"po2_{po2}_cycle_{cycle}_*.json"
+
+    matches = list(session_dir.glob(pattern))
+
+    if not matches:
+        raise FileNotFoundError(f"No matching session file for po2={po2}, cycle={cycle} in {session_dir}")
+    if len(matches) > 1:
+        print(f"Warning: multiple matches found, using the first: {matches}")
+
+    path = matches[0]
+    with open(path, "r") as f:
         return json.load(f)
 
 
-def load_lifted_receipts() -> List[bytes]:
-    with open("../metadata/lifted_receipts.json", "r") as f:
+def load_lifted_receipts(po2: int, cycle: int) -> List[bytes]:
+    path = Path(f"../metadata/po2_{po2}/lifted_receipts_po2_{po2}_cycle_{cycle}.json")
+    with open(path, "r") as f:
         raw_data = json.load(f)
+
     parsed = [LiftedReceipt.model_validate(entry) for entry in raw_data]
     return [p.model_dump_json(by_alias=True).encode() for p in parsed]
 
 
-def load_keccak_requests() -> List[bytes]:
-    session = load_session()
+def load_keccak_requests(po2: int, cycle: int) -> List[bytes]:
+    session = load_session(po2, cycle)
     keccak_requests = []
 
     for keccak_req_data in session.get("pending_keccaks", []):
@@ -28,8 +42,9 @@ def load_keccak_requests() -> List[bytes]:
     return keccak_requests
 
 
-def load_keccak_receipts() -> List[bytes]:
-    with open("../metadata/keccak/keccak_receipts.json", "r") as f:
+def load_keccak_receipts(po2: int, cycle: int) -> List[bytes]:
+    path = Path(f"../metadata/po2_{po2}/keccak/keccak_receipts_po2_{po2}_cycle_{cycle}.json")
+    with open(path, "r") as f:
         raw_data = json.load(f)
 
     keccak_receipts = []
@@ -42,36 +57,32 @@ def load_keccak_receipts() -> List[bytes]:
     return keccak_receipts
 
 
-def load_root_receipt() -> dict:
-    with open("../metadata/root_receipt.json", "r") as f:
+def load_root_receipt(po2: int, cycle: int) -> dict:
+    path = Path(f"../metadata/po2_{po2}/root_receipt_po2_{po2}_cycle_{cycle}.json")
+    with open(path, "r") as f:
         return json.load(f)
 
 
-def load_unioned_receipt() -> dict:
-    with open("../metadata/keccak/unioned_receipt.json", "r") as f:
+def load_unioned_receipt(po2: int, cycle: int) -> dict:
+    path = Path(f"../metadata/po2_{po2}/keccak/unioned_receipts_po2_{po2}_cycle_{cycle}.json")
+    with open(path, "r") as f:
         return json.load(f)
 
 
-def load_assumption_receipts_from_session() -> List[dict]:
-    session = load_session()
+def load_segments_directly(po2: int, cycle: int) -> List[bytes]:
+    session_dir = Path(f"../metadata/po2_{po2}/session")
+    pattern = f"po2_{po2}_cycle_{cycle}_*.json"
 
-    assumptions = []
+    matches = list(session_dir.glob(pattern))
 
-    for group in session.get("assumptions", []):
-        for assumption_data in group:
-            if isinstance(assumption_data, dict):
-                cleaned_dict = {k: v for k, v in assumption_data.items() if v is not None}
-                assumptions.append(cleaned_dict)
+    if not matches:
+        raise FileNotFoundError(f"No matching session file for po2={po2}, cycle={cycle} in {session_dir}")
+    if len(matches) > 1:
+        print(f"Warning: multiple matches found, using the first: {matches}")
 
-    print(f"Found {len(assumptions)} assumptions in session data")
-    if assumptions:
-        print(f"First assumption keys: {list(assumptions[0].keys())}")
+    path = matches[0]
 
-    return assumptions
-
-
-def load_segments_directly() -> List[bytes]:
-    with open("../metadata/session/session_4_segments.json", "r") as f:
+    with open(path, "r") as f:
         raw_data = json.load(f)
 
     if isinstance(raw_data, dict) and "segments" in raw_data:
@@ -85,14 +96,14 @@ def load_segments_directly() -> List[bytes]:
         raise ValueError("No segments found in session data")
 
 
-def load_session_with_segments() -> List[bytes]:
+def load_session_with_segments(po2: int, cycle: int) -> List[bytes]:
     try:
-        return load_segments_directly()
+        return load_segments_directly(po2, cycle)
     except Exception as e:
         print(f"Direct loading failed: {e}")
         print("Trying with Session models...")
 
-        session = load_session()
+        session = load_session(po2, cycle)
         segments_data = []
         for segment in session.get("segments", []):
             segment_json = json.dumps(segment)
@@ -100,12 +111,14 @@ def load_session_with_segments() -> List[bytes]:
         return segments_data
 
 
-def load_resolved_receipt() -> dict:
-    with open("../metadata/resolved_receipt.json", "r") as f:
+def load_resolved_receipt(po2: int, cycle: int) -> dict:
+    path = Path(f"../metadata/po2_{po2}/resolved_receipt_po2_{po2}_cycle_{cycle}.json")
+    with open(path, "r") as f:
         return json.load(f)
 
 
-def load_stark_receipt() -> bytes:
-    with open("../metadata/result/finalized_receipt.json", "r") as f:
-        obj = json.load(f)  # dict
+def load_stark_receipt(po2: int, cycle: int) -> bytes:
+    path = Path(f"../metadata/po2_{po2}/result/finalized_receipt_po2_{po2}_cycle_{cycle}.json")
+    with open(path, "r") as f:
+        obj = json.load(f)
         return json.dumps(obj).encode("utf-8")

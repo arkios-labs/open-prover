@@ -135,6 +135,7 @@ class SessionAssumption(BaseModel):
     control_root: Optional[List[int]] = None
     Unresolved: Optional[UnresolvedAssumption] = Field(None)
 
+
 # Rust: KeccakState = [u64; 25]
 class KeccakState(BaseModel):
     state: List[int]  # 25개의 u64 값
@@ -163,10 +164,6 @@ class KeccakReceipt(BaseModel):
     hashfn: str
     verifier_parameters: List[int]  # []int64 -> List[int]
     control_inclusion_proof: KeccakReceiptControlInclusionProof
-
-
-# 기존 PendingKeccak을 SerializableKeccakRequest로 변경
-PendingKeccak = SerializableKeccakRequest
 
 
 class ResolveInput(BaseModel):
