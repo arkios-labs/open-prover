@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
     );
 
     let agent_provider = Box::new(EnvProvider {
-        key: "AGENT_TYPE".to_string(),
+        key: agent_type,
     });
     let agent = get_agent(agent_provider)?;
     let agent_ref: &dyn Agent = agent.as_ref();

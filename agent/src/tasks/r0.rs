@@ -1,8 +1,8 @@
 use crate::io::input::env::EnvProvider;
 use crate::tasks::factory::get_agent;
 use crate::tasks::{
-    Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession, convert,
-    deserialize_obj, serialize_obj,
+    Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput,
+    SerializableSession, convert, deserialize_obj, serialize_obj,
 };
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
@@ -10,12 +10,7 @@ use hex::FromHex;
 use nix::{sys::stat, unistd};
 use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
-use risc0_zkvm::{
-    AssumptionReceipt, Digest, Groth16ProofJson, Groth16Receipt, Groth16ReceiptVerifierParameters,
-    Groth16Seal, InnerAssumptionReceipt, InnerReceipt, MaybePruned, ProverOpts, ProverServer,
-    Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
-    seal_to_json,
-};
+use risc0_zkvm::{Assumption, AssumptionReceipt, Digest, Groth16ProofJson, Groth16Receipt, Groth16ReceiptVerifierParameters, Groth16Seal, InnerAssumptionReceipt, InnerReceipt, MaybePruned, ProverOpts, ProverServer, Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server, seal_to_json, Journal, prove_registered_zkr, ProveZkrRequest};
 use std::any::Any;
 use std::collections::HashMap;
 use std::fs::File;
@@ -42,7 +37,7 @@ impl RiscZeroAgent {
     pub fn new() -> Result<Self> {
         let verifier_ctx = VerifierContext::default();
 
-        let opts = ProverOpts::default();
+        let opts = ProverOpts::default().with_segment_po2_max(25);
         let prover = get_prover_server(&opts).context("Failed to initialize prover server")?;
 
         Ok(Self {
@@ -52,7 +47,6 @@ impl RiscZeroAgent {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl Agent for RiscZeroAgent {
     fn execute(&self, _data: Vec<u8>) -> Result<Vec<u8>> {
         bail!("RiscZeroTask::execute is not supported in this context");
@@ -183,27 +177,31 @@ impl Agent for RiscZeroAgent {
             bail!("resolve input is empty");
         }
 
-        let ResolveInput {
-            mut root,
-            union,
-            assumptions,
-        } = serde_json::from_slice(&input).context("Failed to parse ResolveInput JSON")?;
+        let inputs: Vec<Vec<u8>> = serde_json::from_slice(&input)
+            .context("Failed to parse input as Vec<Vec<u8>> for resolve")?;
 
-        let mut assumption_receipt_map = HashMap::new();
-
-        let assumption_receipts: Vec<SuccinctReceipt<Unknown>> = assumptions
-            .iter()
-            .filter_map(|(_, receipt)| match receipt {
-                AssumptionReceipt::Proven(InnerAssumptionReceipt::Succinct(r)) => Some(r.clone()),
-                _ => None,
-            })
-            .collect();
-        info!("Loaded {} assumption receipts", assumption_receipts.len());
-
-        for receipt in assumption_receipts {
-            let digest_str = receipt.claim.digest().to_string();
-            assumption_receipt_map.insert(digest_str, receipt);
+        if inputs.len() != 3 {
+            bail!(
+                "Expected exactly three inputs for resolve, got {}",
+                inputs.len()
+            )
         }
+
+        let mut root: SuccinctReceipt<ReceiptClaim> =
+            deserialize_obj(&inputs[0]).context("Failed to deserialize root receipt")?;
+
+        let union: Option<SuccinctReceipt<Unknown>> =
+            deserialize_obj(&inputs[1]).context("Failed to deserialize union receipt")?;
+
+        let pairs: Vec<(Assumption, AssumptionReceipt)> =
+            deserialize_obj(&inputs[2]).context("Failed to deserialize assumptions")?;
+
+        let (assumptions, session_assumption_receipts): (Vec<Assumption>, Vec<AssumptionReceipt>) =
+            pairs.into_iter().unzip();
+
+        let mut assumption_receipt_map:HashMap<String, SuccinctReceipt<Unknown>> = HashMap::new();
+
+        info!("Loaded {} assumption receipts", session_assumption_receipts.len());
 
         let mut assumptions_len: u64 = 0;
 
@@ -267,23 +265,26 @@ impl Agent for RiscZeroAgent {
 
     fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::finalize()");
-
+        
         if input.is_empty() {
             bail!("finalize input is empty");
         }
 
-        let FinalizeInput {
-            root,
-            journal,
-            image_id,
-        } = serde_json::from_slice(&input).context("Failed to parse FinalizeInput JSON")?;
+        let inputs: Vec<Vec<u8>> = serde_json::from_slice(&input)
+            .context("Failed to parse input as Vec<Vec<u8>> for finalize")?;
 
-        let journal: Vec<u8> = if journal.is_empty() {
-            warn!("Journal was empty, using default empty Vec");
-            vec![]
-        } else {
-            journal
-        };
+        if inputs.len() != 3 {
+            bail!(
+                "Expected exactly three inputs for finalize, got {}",
+                inputs.len()
+            )
+        }
+        
+        let root: SuccinctReceipt<ReceiptClaim> =
+            deserialize_obj(&inputs[0]).context("Failed to deserialize root receipt")?;
+        let journal: Vec<u8> = inputs[1].clone();
+        let image_id: String =
+            deserialize_obj(&inputs[2]).context("Failed to deserialize image_id")?;
 
         let rollup_receipt = Receipt::new(InnerReceipt::Succinct(root), journal);
 
@@ -374,13 +375,6 @@ impl Agent for RiscZeroAgent {
         );
 
         Ok(serialized)
-    }
-
-    async fn snark(&self, _input: Vec<u8>) -> Result<Vec<u8>> {
-        info!(
-            "RiscZeroTask::snark() - legacy method, use prepare_snark + get_snark_receipt instead"
-        );
-        bail!("snark method is deprecated, use prepare_snark + get_snark_receipt instead")
     }
 }
 
@@ -927,8 +921,7 @@ async fn test_stark2snark() -> Result<()> {
     );
 
     let groth16_receipt = agent_ref
-        .snark(stark_receipt_bytes)
-        .await
+        .get_snark_receipt(stark_receipt_bytes)
         .expect("stark2snark conversion failed: could not convert stark receipt to snark");
 
     assert!(

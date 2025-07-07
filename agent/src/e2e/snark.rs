@@ -234,8 +234,7 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let start_step_7 = Instant::now();
 
     let groth16_receipt = agent_ref
-        .snark(rollup_receipt)
-        .await
+        .get_snark_receipt(rollup_receipt)
         .expect("stark2snark conversion failed: could not convert stark receipt to snark");
     
     assert!(!groth16_receipt.is_empty(), "Groth16 receipt should not be empty");

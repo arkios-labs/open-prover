@@ -125,6 +125,8 @@ def run_resolve_with_ray(po2:int, cycle:int) -> bytes:
 
     session = load_session(po2, cycle)
     assumptions = []
+    root_bytes = json.dumps(root, ensure_ascii=False).encode("utf-8")
+    union_bytes = json.dumps(union, ensure_ascii=False).encode("utf-8")
 
     for assumption_tuple in session.get("assumptions", []):
         if isinstance(assumption_tuple, list) and len(assumption_tuple) == 2:
@@ -135,15 +137,9 @@ def run_resolve_with_ray(po2:int, cycle:int) -> bytes:
                     cleaned_receipt = {k: v for k, v in receipt.items() if v is not None}
                     if cleaned_receipt:
                         assumptions.append(cleaned_receipt)
-
     print(f"Loaded {len(assumptions)} proven assumption receipts from session")
 
-    resolve_input = ResolveInput(root=root, union=union, assumptions=assumptions)
-    input_bytes = resolve_input.model_dump_json(by_alias=True).encode()
-
-    print(f"ResolveInput JSON size: {len(input_bytes)} bytes")
-    print(f"ResolveInput JSON preview: {input_bytes[:200]}...")
-
+    input_bytes = json.dumps([list(root_bytes), list(union_bytes), list(assumptions)]).encode()
     try:
         json_str = input_bytes.decode()
         json.loads(json_str)

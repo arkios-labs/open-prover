@@ -63,7 +63,6 @@ pub struct FinalizeInput {
     pub(crate) image_id: String,
 }
 
-#[async_trait::async_trait(?Send)]
 pub trait Agent {
     fn execute(&self, data: Vec<u8>) -> Result<Vec<u8>>;
     fn prove(&self, data: Vec<u8>) -> Result<Vec<u8>>;
@@ -74,7 +73,6 @@ pub trait Agent {
     fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn prepare_snark(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn get_snark_receipt(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    async fn snark(&self, data: Vec<u8>) -> Result<Vec<u8>>;
 }
 
 pub fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
