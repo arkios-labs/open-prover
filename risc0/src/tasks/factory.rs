@@ -1,4 +1,4 @@
-use crate::io::input::InputProvider;
+use common::io::input::InputProvider;
 use crate::tasks::Agent;
 use crate::tasks::r0::RiscZeroAgent;
 use anyhow::Result;
@@ -12,7 +12,7 @@ pub fn get_agent(input: Box<dyn InputProvider>) -> Result<Box<dyn Agent>> {
         "r0" => Ok(Box::new(RiscZeroAgent::new()?)),
         _ => {
             warn!(
-                "Unrecognized agent type '{}'; defaulting to RiscZeroAgent.",
+                "Unrecognized risc0 type '{}'; defaulting to RiscZeroAgent.",
                 agent_type.trim()
             );
             Ok(Box::new(RiscZeroAgent::new()?))

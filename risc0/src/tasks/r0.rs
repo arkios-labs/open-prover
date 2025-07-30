@@ -1,4 +1,4 @@
-use crate::io::input::env::EnvProvider;
+use common::io::input::env::EnvProvider;
 use crate::tasks::factory::get_agent;
 use crate::tasks::{
     Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput,

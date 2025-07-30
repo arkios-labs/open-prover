@@ -1,7 +1,7 @@
-use agent::command::registry::Command;
-use agent::io::input::env::EnvProvider;
-use agent::tasks::factory::get_agent;
-use agent::tasks::{
+use common::io::input::env::EnvProvider;
+use risc0::command::registry::Command;
+use risc0::tasks::factory::get_agent;
+use risc0::tasks::{
     Agent, ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
 };
 use anyhow::{Context, Result};
