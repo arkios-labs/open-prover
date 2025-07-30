@@ -8,7 +8,6 @@ mod tests {
     };
     use anyhow::{anyhow, Context};
     use common::io::input::env::EnvProvider;
-    use risc0_zkvm::sha::Digestible;
     use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
     use std::collections::VecDeque;
     use std::time::Instant;

@@ -1,38 +1,20 @@
-use crate::tasks::factory::get_agent;
-use crate::tasks::{
-    Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession, convert,
-    deserialize_obj, serialize_obj,
-};
-use anyhow::{Context, Result, anyhow, bail};
-use async_trait::async_trait;
-use common::io::input::env::EnvProvider;
+use crate::tasks::{Agent, ProveKeccakRequestLocal, convert, deserialize_obj, serialize_obj};
+use anyhow::{Context, Result, bail};
 use hex::FromHex;
-use nix::{sys::stat, unistd};
 use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
     Assumption, AssumptionReceipt, Digest, Groth16ProofJson, Groth16Receipt,
-    Groth16ReceiptVerifierParameters, Groth16Seal, InnerAssumptionReceipt, InnerReceipt, Journal,
-    MaybePruned, ProveZkrRequest, ProverOpts, ProverServer, Receipt, ReceiptClaim, SuccinctReceipt,
-    Unknown, VerifierContext, get_prover_server, prove_registered_zkr, seal_to_json,
+    Groth16ReceiptVerifierParameters, Groth16Seal, InnerReceipt, ProverOpts, ProverServer, Receipt,
+    ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server, seal_to_json,
 };
-use std::any::Any;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Cursor, Read, Write};
-use std::path::{Path, PathBuf};
-use std::time::Instant;
-use std::{env, fs, rc::Rc};
+use std::io::Cursor;
+use std::rc::Rc;
 use tempfile::tempdir;
-use tokio::process::Command;
-use tracing::{info, warn};
+use tracing::info;
 
-const APP_DIR: &str = "";
-const WITNESS_FILE: &str = "output.wtns";
-const PROOF_FILE: &str = "proof.json";
-const IDENT_FILE: &str = "ident.json";
-const STARK_VERIFY_BIN: &str = "stark_verify";
-const PROVER_BIN: &str = "prover";
 pub struct RiscZeroAgent {
     pub prover: Option<Rc<dyn ProverServer>>,
     pub verifier_ctx: VerifierContext,
@@ -189,10 +171,10 @@ impl Agent for RiscZeroAgent {
         let pairs: Vec<(Assumption, AssumptionReceipt)> =
             deserialize_obj(&inputs[2]).context("Failed to deserialize assumptions")?;
 
-        let (assumptions, session_assumption_receipts): (Vec<Assumption>, Vec<AssumptionReceipt>) =
+        let (_, session_assumption_receipts): (Vec<Assumption>, Vec<AssumptionReceipt>) =
             pairs.into_iter().unzip();
 
-        let mut assumption_receipt_map: HashMap<String, SuccinctReceipt<Unknown>> = HashMap::new();
+        let assumption_receipt_map: HashMap<String, SuccinctReceipt<Unknown>> = HashMap::new();
 
         info!("Loaded {} assumption receipts", session_assumption_receipts.len());
 
@@ -357,18 +339,20 @@ impl Agent for RiscZeroAgent {
 }
 #[cfg(test)]
 mod tests {
-    use anyhow::{anyhow, Result};
-    use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
-    use common::io::input::env::EnvProvider;
-    use crate::tasks::{deserialize_obj, serialize_obj, Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession};
     use crate::tasks::factory::get_agent;
+    use crate::tasks::{
+        Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession,
+        deserialize_obj, serialize_obj,
+    };
+    use anyhow::Context;
+    use anyhow::{Result, anyhow};
+    use common::io::input::env::EnvProvider;
+    use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
+    use std::{collections::VecDeque, env, fs, path::PathBuf, time::Instant};
+    use tracing::info;
 
     #[test]
     fn test_keccak_on_pending_keccaks() -> Result<()> {
-        use anyhow::Context;
-        use std::{env, fs, path::PathBuf, time::Instant};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
@@ -447,9 +431,6 @@ mod tests {
 
     #[test]
     fn test_union_on_keccaks_tree() -> Result<()> {
-        use std::{collections::VecDeque, env, fs, time::Instant};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
@@ -537,10 +518,6 @@ mod tests {
 
     #[test]
     fn test_prove_all_segments() -> Result<()> {
-        use anyhow::Context;
-        use std::{env, fs, time::Instant};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
@@ -602,9 +579,6 @@ mod tests {
 
     #[test]
     fn test_join_on_lifted_receipts() -> Result<()> {
-        use std::{collections::VecDeque, env, fs, time::Instant};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
@@ -681,10 +655,6 @@ mod tests {
 
     #[test]
     fn test_resolve_on_session() -> Result<()> {
-        use std::time::Instant;
-        use std::{env, fs};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
@@ -747,10 +717,6 @@ mod tests {
 
     #[test]
     fn test_finalize_on_session() -> Result<()> {
-        use std::time::Instant;
-        use std::{env, fs};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
@@ -817,10 +783,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_stark2snark() -> Result<()> {
-        use std::time::Instant;
-        use std::{env, fs};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
@@ -858,10 +820,6 @@ mod tests {
 
     #[test]
     fn test_prepare_snark() -> Result<()> {
-        use std::time::Instant;
-        use std::{env, fs};
-        use tracing::info;
-
         tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());

@@ -1,16 +1,10 @@
 use anyhow::{Context, Result};
-use bincode::deserialize;
 use common::io::input::env::EnvProvider;
 use risc0::command::registry::Command;
+use risc0::tasks::Agent;
 use risc0::tasks::factory::get_agent;
-use risc0::tasks::{
-    Agent, ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
-};
-use risc0_zkvm::{ReceiptClaim, SuccinctReceipt, Unknown};
-use std::fs::File;
 use std::io::{Read, Write};
-use std::str::FromStr;
-use std::{env, fs, io};
+use std::{env, io};
 use tracing::info;
 
 #[tokio::main]

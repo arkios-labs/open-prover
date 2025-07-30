@@ -8,9 +8,7 @@ mod tests {
     };
     use anyhow::{anyhow, Context, Result};
     use common::io::input::env::EnvProvider;
-    use risc0_zkvm::{
-        AssumptionReceipt, InnerAssumptionReceipt, ReceiptClaim, SuccinctReceipt, Unknown,
-    };
+    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt, Unknown};
     use std::collections::VecDeque;
     use std::time::Instant;
     use std::{env, fs};
