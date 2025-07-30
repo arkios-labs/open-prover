@@ -1,5 +1,5 @@
-pub mod r0;
 pub mod factory;
+pub mod r0;
 
 use anyhow::Result;
 use risc0_zkvm::{

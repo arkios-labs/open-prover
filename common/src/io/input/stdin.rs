@@ -1,6 +1,6 @@
-use std::io::{self, Read};
-use anyhow::Result;
 use crate::io::input::InputProvider;
+use anyhow::Result;
+use std::io::{self, Read};
 
 pub struct StdinProvider;
 

@@ -1,7 +1,7 @@
-use std::fs::File;
+use crate::io::input::InputProvider;
 use anyhow::Result;
 use memmap2::MmapOptions;
-use crate::io::input::InputProvider;
+use std::fs::File;
 
 pub struct ShmemProvider {
     pub path: String,

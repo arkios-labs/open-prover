@@ -1,2 +1,2 @@
+mod snark;
 pub mod stark;
-mod snark; 

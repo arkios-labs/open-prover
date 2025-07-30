@@ -1,24 +1,25 @@
-use std::{env, fs};
-use std::collections::VecDeque;
-use std::time::Instant;
-use anyhow::{anyhow, Context};
-use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
-use risc0_zkvm::sha::Digestible;
-use tracing::info;
-use common::io::input::env::EnvProvider;
-use crate::tasks::{deserialize_obj, serialize_obj, Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession};
 use crate::tasks::factory::get_agent;
 use crate::tasks::r0::read_image_id;
+use crate::tasks::{
+    Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession,
+    deserialize_obj, serialize_obj,
+};
+use anyhow::{Context, anyhow};
+use common::io::input::env::EnvProvider;
+use risc0_zkvm::sha::Digestible;
+use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
+use std::collections::VecDeque;
+use std::time::Instant;
+use std::{env, fs};
+use tracing::info;
 
 #[tokio::test]
 async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
-    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_|"r0".to_string());
+    let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
-    let input = Box::new(EnvProvider {
-        key: agent_type,
-    });
+    let input = Box::new(EnvProvider { key: agent_type });
 
     let agent = get_agent(input)?;
     let agent_ref: &dyn Agent = agent.as_ref();
@@ -40,20 +41,28 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
         info!("Step 1: Proving segment [{} / {}]", i + 1, session.segments.len());
         let bytes = serialize_obj(segment)?;
         let lifted_bytes = agent_ref.prove(bytes)?;
-        
+
         assert!(!lifted_bytes.is_empty(), "Lifted bytes should not be empty for segment {}", i);
-        
+
         let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
             .context(format!("Failed to deserialize receipt for segment {}", i))?;
-        
-        assert!(lifted_receipt.claim.as_value().is_ok(), "Receipt claim should be present for segment {}", i);
-        
+
+        assert!(
+            lifted_receipt.claim.as_value().is_ok(),
+            "Receipt claim should be present for segment {}",
+            i
+        );
+
         all_succinct_receipts.push(lifted_receipt);
         info!("Segment [{}] proof size: {}", i, lifted_bytes.len());
     }
     info!("Step 1 done in {:?}", start_step_1.elapsed());
 
-    assert_eq!(all_succinct_receipts.len(), session.segments.len(), "Number of receipts should match number of segments");
+    assert_eq!(
+        all_succinct_receipts.len(),
+        session.segments.len(),
+        "Number of receipts should match number of segments"
+    );
 
     // --------------------------------------------------------
     // Step 2: Join All Succinct Receipts into Root Receipt
@@ -71,23 +80,22 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
         let joined = agent_ref.join(join_input).expect("Join failed");
 
         assert!(!joined.is_empty(), "Joined result should not be empty");
-        assert!(joined.len() > left.len() || joined.len() > right.len(), "Joined result should be larger than individual receipts");
+        assert!(
+            joined.len() > left.len() || joined.len() > right.len(),
+            "Joined result should be larger than individual receipts"
+        );
 
         info!("Join successful, resulting size: {}", joined.len());
         queue.push_back(joined);
     }
 
     let root_receipt_bytes = queue.pop_front().unwrap();
-    info!(
-        "Step 2 done in {:?} with {:?} receipts",
-        start_step_2.elapsed(),
-        session.segments.len()
-    );
+    info!("Step 2 done in {:?} with {:?} receipts", start_step_2.elapsed(), session.segments.len());
 
     assert!(!root_receipt_bytes.is_empty(), "Root receipt should not be empty");
-    
+
     let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&root_receipt_bytes)?;
-    
+
     assert!(root_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
 
     // --------------------------------------------------------
@@ -116,21 +124,25 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
 
         let bytes = serialize_obj(&local_req)?;
         let result = agent_ref.keccak(bytes)?;
-        
+
         assert!(!result.is_empty(), "Keccak result should not be empty for request {}", i);
-        
+
         let keccak_receipt: SuccinctReceipt<Unknown> =
             deserialize_obj(&result).context("Failed to deserialize keccak")?;
-        
+
         assert!(keccak_receipt.claim.as_value().is_ok(), "Keccak receipt should have a claim");
-        
+
         keccak_receipts.push(keccak_receipt);
         info!("Keccak [{}] result size: {}", i, result.len());
     }
 
     info!("Step 3 done in {:?} with {} receipts", start_step_3.elapsed(), keccak_receipts.len());
-    
-    assert_eq!(keccak_receipts.len(), session.pending_keccaks.len(), "Number of keccak receipts should match pending keccaks");
+
+    assert_eq!(
+        keccak_receipts.len(),
+        session.pending_keccaks.len(),
+        "Number of keccak receipts should match pending keccaks"
+    );
 
     // --------------------------------------------------------
     // Step 4: Union Keccak Receipts into Merkle-like Tree
@@ -176,7 +188,7 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let final_branch = queue.pop().unwrap();
     let final_result = final_branch.last().unwrap().clone();
     info!("Step 4 done in {:?}, final union size: {}", start_step_4.elapsed(), final_result.len());
-    
+
     assert!(!final_result.is_empty(), "Final union result should not be empty");
 
     // --------------------------------------------------------
@@ -196,7 +208,7 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let resolve_bytes = serde_json::to_vec(&resolve_input)?;
 
     let resolved = agent_ref.resolve(resolve_bytes)?;
-    
+
     assert!(!resolved.is_empty(), "Resolved result should not be empty");
 
     info!("Step 5 resolve done in {:?}", start_step_5.elapsed());
@@ -212,7 +224,8 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
         .map(|j| j.bytes.clone())
         .ok_or_else(|| anyhow!("journal is missing"))?;
 
-    let image_id = read_image_id("3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a")?;
+    let image_id =
+        read_image_id("3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a")?;
 
     let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&resolved)?;
     let finalize_input = FinalizeInput {
@@ -223,9 +236,9 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let finalize_bytes = serde_json::to_vec(&finalize_input)?;
 
     let rollup_receipt = agent_ref.finalize(finalize_bytes)?;
-    
+
     assert!(!rollup_receipt.is_empty(), "Rollup receipt should not be empty");
-    
+
     info!("Step 6 finalize done in {:?}", start_step_6.elapsed());
 
     // --------------------------------------------------------
@@ -236,19 +249,22 @@ async fn test_e2e_stark_proof_generation() -> anyhow::Result<()> {
     let groth16_receipt = agent_ref
         .get_snark_receipt(rollup_receipt)
         .expect("stark2snark conversion failed: could not convert stark receipt to snark");
-    
+
     assert!(!groth16_receipt.is_empty(), "Groth16 receipt should not be empty");
-    
+
     info!("Step 7 stark2Snark done in {:?}", start_step_7.elapsed());
 
     let groth16_receipt: Receipt = deserialize_obj(&groth16_receipt)?;
-    
+
     assert!(groth16_receipt.claim().is_ok(), "Final Groth16 receipt should have a claim");
 
     let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
     fs::write("metadata/result/groth16.json", groth16_json)?;
-    
-    assert!(fs::metadata("metadata/result/groth16.json").is_ok(), "Groth16 result file should be created");
-    
+
+    assert!(
+        fs::metadata("metadata/result/groth16.json").is_ok(),
+        "Groth16 result file should be created"
+    );
+
     Ok(())
 }

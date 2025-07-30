@@ -1,6 +1,6 @@
-use std::str::FromStr;
 use crate::tasks::Agent;
 use anyhow::Result;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Command {
