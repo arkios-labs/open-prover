@@ -29,5 +29,8 @@ node_modules
 ./risc0/python/tasks/__pycache__/
 ./risc0/python/*.py[cod]
 ./risc0/python/*$py.class
+./sp1/pk_device.mpk
+./sp1/metadata
+./risc0/metadata
 
 ./sp1-cpu
