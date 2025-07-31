@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "common",
-    "risc0"
+    "risc0",
+    "sp1"
 ]
 resolver = "3"

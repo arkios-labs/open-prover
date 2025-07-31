@@ -29,3 +29,5 @@ node_modules
 ./risc0/python/tasks/__pycache__/
 ./risc0/python/*.py[cod]
 ./risc0/python/*$py.class
+
+./sp1-cpu
