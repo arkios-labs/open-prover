@@ -1,13 +1,12 @@
 use crate::tasks::{
-    Agent, COMPRESS_INPUT_LEN, GROTH16_INPUT_LEN, PLONK_INPUT_LEN, PROVE_INPUT_LEN,
-    PROVE_LIFT_INPUT_LEN,
+    Agent, Sp1Agent, COMPRESS_INPUT_LEN, GROTH16_INPUT_LEN, PLONK_INPUT_LEN,
+    PROVE_INPUT_LEN, PROVE_LIFT_INPUT_LEN,
 };
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use cfg_if::cfg_if;
 use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
 use common::serialization::mpk::deserialize_from_msgpack_bytes;
-use moongate_prover::SP1GpuProver;
 use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
@@ -25,36 +24,40 @@ use sp1_stark::{
     Val, DIGEST_SIZE,
 };
 use std::any::Any;
+use std::fs;
 use std::slice::from_mut;
 use std::sync::Arc;
 use std::time::Instant;
-use std::{fs, slice};
 use tracing::info;
 
-pub struct GpuAgent {
-    pub prover: Arc<SP1GpuProver>,
-    pub prover_opts: SP1ProverOpts,
-}
-
-impl GpuAgent {
+impl Sp1Agent {
     pub fn new() -> anyhow::Result<Self> {
         cfg_if! {
             if #[cfg(feature = "gpu")] {
-                Ok(Self {
-                    prover: Arc::new(moongate_prover::SP1GpuProver::new()),
-                    prover_opts: SP1ProverOpts::default(),
-                })
+                let inner_prover = moongate_prover::SP1GpuProver::new();
             } else {
-                bail!("GPU feature is not enabled. Please compile with --features gpu")
+                let inner_prover = sp1_prover::SP1Prover::new();
             }
         }
+        let prover = Arc::new(inner_prover);
+
+        Ok(Self {
+            prover,
+            prover_opts: SP1ProverOpts::default(),
+        })
     }
 }
 
 #[async_trait]
-impl Agent for GpuAgent {
+impl Agent for Sp1Agent {
     fn name(&self) -> &'static str {
-        "sp1-gpu"
+        cfg_if! {
+            if #[cfg(feature = "gpu")] {
+                "sp1-gpu"
+            } else {
+                "sp1-cpu"
+            }
+        }
     }
 
     fn as_any(self: Box<Self>) -> Box<dyn Any> {
@@ -62,27 +65,28 @@ impl Agent for GpuAgent {
     }
 
     fn setup(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("GpuAgent::setup()");
         let start_time = Instant::now();
 
+        info!("Agent::setup()");
         if input.is_empty() {
             bail!("setup input is empty");
         }
 
         let elf_path: String =
             deserialize_from_msgpack_bytes(&input).context("Failed to deserialize ELF path")?;
+
         let elf_bytes = fs::read(&elf_path)
             .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
 
         let (_, _pkey, _, vkey) = self.prover.setup(&elf_bytes);
-        let vkey = serialize_to_bincode_bytes(&vkey).context("Failed to serialize")?;
+        let vkey = serialize_to_bincode_bytes(&vkey).context("Failed to serialize vkey")?;
         let elapsed = start_time.elapsed();
-        info!("GpuAgent::setup() took {:?}", elapsed);
+        info!("Agent::setup() took {:?}", elapsed);
         Ok(vkey)
     }
 
     fn prove(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::prove()");
+        info!("Agent::prove()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -126,6 +130,7 @@ impl Agent for GpuAgent {
             .prover
             .get_program(&elf_bytes)
             .expect("Failed to get program");
+
         let pkey = self.prover.core_prover.pk_from_vk(&program, &vk);
 
         let mut challenger = self.prover.core_prover.config().challenger();
@@ -147,12 +152,12 @@ impl Agent for GpuAgent {
 
         let serialized = serialize_to_bincode_bytes(&shard_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("CpuAgent::prove() took {:?}", elapsed);
+        info!("Agent::prove() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn prove_lift(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("GpuAgent::prove_lift()");
+        info!("Agent::prove_lift()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -168,7 +173,7 @@ impl Agent for GpuAgent {
         let vk = deserialize_from_bincode_bytes::<StarkVerifyingKey<CoreSC>>(&inputs[2])
             .context("Failed to deserialize vk")?;
 
-        // Step 1: Process ExecutionRecord
+        // Step 1: Load & process record
         let record_path = deserialize_from_msgpack_bytes::<String>(&inputs[0])
             .context("Failed to deserialize record path")?;
         let bytes = fs::read(&record_path).context("Failed to read record file")?;
@@ -186,13 +191,12 @@ impl Agent for GpuAgent {
                 .fix_shape(&mut record)
                 .context("Failed to fix shape")?;
         }
-
         let traces = self.prover.core_prover.generate_traces(&record);
 
-        // Step 2: Load ELF, generate PK and Challenger
+        // Step 2: Load ELF & generate PK, challenger
         let elf_path = deserialize_from_msgpack_bytes::<String>(&inputs[1])
             .context("Failed to deserialize ELF path")?;
-        let elf_bytes = fs::read(&elf_path).context("Failed to read elf file")?;
+        let elf_bytes = fs::read(&elf_path).context("Failed to read ELF file")?;
         let program = self
             .prover
             .get_program(&elf_bytes)
@@ -213,7 +217,7 @@ impl Agent for GpuAgent {
                 .unwrap()
         });
 
-        // Step 4: Build recursion witness
+        // Step 4: Generate recursion witness
         let is_first_shard = record.public_values.shard == 1;
         let is_complete = false;
         let deferred_digest = [Val::<CoreSC>::zero(); DIGEST_SIZE];
@@ -229,7 +233,6 @@ impl Agent for GpuAgent {
 
         let witness = SP1CircuitWitness::Core(recursion_witness);
 
-        // Step 5: Prepare and run runtime
         let (program, witness_stream) = match witness {
             SP1CircuitWitness::Core(input) => {
                 let mut witness_stream = Vec::new();
@@ -252,6 +255,7 @@ impl Agent for GpuAgent {
             }
         };
 
+        // Step 5: Run recursive prover
         let mut runtime =
             sp1_recursion_core::runtime::Runtime::<Val<InnerSC>, Challenge<InnerSC>, _>::new(
                 program.clone(),
@@ -293,13 +297,13 @@ impl Agent for GpuAgent {
             serialize_to_bincode_bytes(&recursion_proof).context("Failed to serialize")?;
 
         let elapsed = start_time.elapsed();
-        info!("GpuAgent::prove_lift() took {:?}", elapsed);
+        info!("CpuAgent::prove_lift() took {:?}", elapsed);
 
         Ok(serialized)
     }
 
     fn compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("GpuAgent::compress()");
+        info!("Agent::compress()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -327,19 +331,19 @@ impl Agent for GpuAgent {
 
         let witness = SP1CircuitWitness::Compress(compress_input);
 
-        let mut stream = Vec::new();
+        let mut witness_stream = Vec::new();
         let program = match witness {
             SP1CircuitWitness::Core(input) => {
-                Witnessable::<InnerConfig>::write(&input, &mut stream);
+                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
                 self.prover.recursion_program(&input)
             }
             SP1CircuitWitness::Deferred(input) => {
-                Witnessable::<InnerConfig>::write(&input, &mut stream);
+                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
                 self.prover.deferred_program(&input)
             }
             SP1CircuitWitness::Compress(input) => {
-                let input_with_merkle = self.prover.make_merkle_proofs(input);
-                Witnessable::<InnerConfig>::write(&input_with_merkle, &mut stream);
+                let input_with_merkle = self.prover.make_merkle_proofs(input.clone());
+                Witnessable::<InnerConfig>::write(&input_with_merkle, &mut witness_stream);
                 self.prover.compress_program(&input_with_merkle)
             }
         };
@@ -349,20 +353,20 @@ impl Agent for GpuAgent {
         let mut challenger = self.prover.compress_prover.config().challenger();
         pk.observe_into(&mut challenger);
 
-        // Step 3: Run prover with witness
+        // Step 3: Run prover with witness stream
         let mut runtime =
             sp1_recursion_core::runtime::Runtime::<Val<InnerSC>, Challenge<InnerSC>, _>::new(
                 program.clone(),
                 self.prover.compress_prover.config().perm.clone(),
             );
-        runtime.witness_stream = stream.into();
+        runtime.witness_stream = witness_stream.into();
 
         runtime
             .run()
             .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
             .context("Failed to run")?;
 
-        // Step 4: Post-processing: commit & open
+        // Step 4: Post-processing
         let mut records = vec![runtime.record];
         self.prover.compress_prover.machine().generate_dependencies(
             &mut records,
@@ -387,12 +391,12 @@ impl Agent for GpuAgent {
             .context("Failed to serialize compressed proof")?;
 
         let elapsed = start_time.elapsed();
-        info!("GpuAgent::compress() took {:?}", elapsed);
+        info!("Agent::compress() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn shrink(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("GpuAgent::shrink()");
+        info!("Agent::shrink()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -400,7 +404,7 @@ impl Agent for GpuAgent {
         }
 
         let reduce_proof: SP1ReduceProof<InnerSC> =
-            deserialize_from_bincode_bytes(&input).context("Failed to deserialize")?;
+            deserialize_from_bincode_bytes(&input).context("Failed to deserialize reduce proof")?;
 
         let shrink_proof = self
             .prover
@@ -410,12 +414,12 @@ impl Agent for GpuAgent {
         let serialized =
             serialize_to_bincode_bytes(&shrink_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("GpuAgent::shrink() took {:?}", elapsed);
+        info!("Agent::shrink() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn wrap(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("GpuAgent::wrap()");
+        info!("Agent::wrap()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -423,7 +427,7 @@ impl Agent for GpuAgent {
         }
 
         let shrink_proof: SP1ReduceProof<InnerSC> =
-            deserialize_from_bincode_bytes(&input).context("Failed to deserialize")?;
+            deserialize_from_bincode_bytes(&input).context("Failed to deserialize shrink proof")?;
 
         let wrap_proof = self
             .prover
@@ -432,12 +436,12 @@ impl Agent for GpuAgent {
 
         let serialized = serialize_to_bincode_bytes(&wrap_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("GpuAgent::wrap() took {:?}", elapsed);
+        info!("Agent::wrap() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn groth16(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("GpuAgent::groth16()");
+        info!("Agent::groth16()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -482,12 +486,12 @@ impl Agent for GpuAgent {
         let serialized = serialize_to_bincode_bytes(&groth16_proof_with_public_values)
             .context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("GpuAgent::groth16() took {:?}", elapsed);
+        info!("Agent::groth16() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn plonk(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("GpuAgent::plonk()");
+        info!("Agent::plonk()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -532,7 +536,44 @@ impl Agent for GpuAgent {
         let serialized = serialize_to_bincode_bytes(&plonk_proof_with_public_values)
             .context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("GpuAgent::plonk() took {:?}", elapsed);
+        info!("Agent::plonk() took {:?}", elapsed);
+        Ok(serialized)
+    }
+
+    fn wrap_compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+        info!("Agent::wrap_compress()");
+        if input.is_empty() {
+            bail!("wrap_compress input is empty");
+        }
+
+        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
+            .context("Failed to parse input as Vec<Vec<u8>>")?;
+
+        if inputs.len() != 2 {
+            bail!("Expected 2 inputs for wrap_compress, got {}", inputs.len());
+        }
+
+        let public_values_path: String = deserialize_from_msgpack_bytes(&inputs[0])
+            .context("Failed to deserialize record path")?;
+
+        let compress_proof: SP1ReduceProof<InnerSC> = deserialize_from_bincode_bytes(&inputs[1])
+            .context("Failed to deserialize compress proof")?;
+
+        let public_values_vec = fs::read(&public_values_path)
+            .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
+
+        let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
+            .context("Failed to deserialize public values")?;
+
+        let compressed_proof_with_public_values: SP1ProofWithPublicValues =
+            SP1ProofWithPublicValues {
+                proof: SP1Proof::Compressed(Box::from(compress_proof)),
+                public_values,
+                sp1_version: SP1_CIRCUIT_VERSION.to_string(),
+                tee_proof: None,
+            };
+        let serialized = serialize_to_bincode_bytes(&compressed_proof_with_public_values)
+            .expect("Failed to serialize");
         Ok(serialized)
     }
 }

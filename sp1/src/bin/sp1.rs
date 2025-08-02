@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use common::io::input::env::EnvProvider;
 use sp1::command::registry::Command;
-use sp1::tasks::factory::get_agent;
-use sp1::tasks::Agent;
+use sp1::tasks::{Agent, Sp1Agent};
 use std::io::{Read, Write};
 use std::{env, io};
 use tracing::info;
@@ -14,21 +13,18 @@ async fn main() -> Result<()> {
         .with_writer(io::stderr)
         .init();
 
-    let agent_type =
-        env::var("AGENT_TYPE").map_err(|_| anyhow::anyhow!("Missing AGENT_TYPE env var"))?;
-
     let task_type: Command = env::var("TASK_TYPE")
         .context("Missing TASK_TYPE")?
         .parse()?;
 
+    let agent = Sp1Agent::new()?;
     info!(
         "Running AGENT_TYPE={} with TASK_TYPE={:?}",
-        agent_type, task_type
+        agent.name(),
+        task_type
     );
 
-    let agent_provider = Box::new(EnvProvider { key: agent_type });
-    let agent = get_agent(agent_provider)?;
-    let agent_ref: &dyn Agent = agent.as_ref();
+    let agent_ref: &dyn Agent = &agent;
 
     let mut stdin = io::stdin();
     let mut input_bytes = Vec::new();

@@ -7,30 +7,18 @@ mod wrap;
 
 #[cfg(test)]
 pub mod tests {
-    use crate::tasks::cpu_agent::CpuAgent;
-    use crate::tasks::factory::get_agent;
-    use anyhow::anyhow;
-    use common::io::input::env::EnvProvider;
+    use crate::tasks::Sp1Agent;
     use std::path::PathBuf;
 
-    pub fn setup_cpu_agent_and_metadata_dir() -> anyhow::Result<(PathBuf, Box<CpuAgent>)> {
+    pub fn setup_agent_and_metadata_dir() -> anyhow::Result<(PathBuf, Sp1Agent)> {
         let _ = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::INFO)
             .try_init();
 
         let metadata_dir = PathBuf::from("metadata");
 
-        let input = Box::new(EnvProvider {
-            key: "AGENT_TYPE".to_string(),
-        });
+        let agent = Sp1Agent::new()?;
 
-        let agent = get_agent(input)?;
-
-        let cpu_agent = agent
-            .as_any()
-            .downcast::<CpuAgent>()
-            .map_err(|_| anyhow!("Expected CpuAgent for this test."))?;
-
-        Ok((metadata_dir, cpu_agent))
+        Ok((metadata_dir, agent))
     }
 }
