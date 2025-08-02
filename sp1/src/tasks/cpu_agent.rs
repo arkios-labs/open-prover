@@ -38,6 +38,10 @@ impl CpuAgent {
 
 #[async_trait]
 impl Agent for CpuAgent {
+    fn name(&self) -> &'static str {
+        "sp1-cpu"
+    }
+
     fn as_any(self: Box<Self>) -> Box<dyn Any> {
         self
     }

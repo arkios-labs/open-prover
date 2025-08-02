@@ -46,6 +46,10 @@ impl GpuAgent {
 
 #[async_trait]
 impl Agent for GpuAgent {
+    fn name(&self) -> &'static str {
+        "sp1-gpu"
+    }
+
     fn as_any(self: Box<Self>) -> Box<dyn Any> {
         self
     }

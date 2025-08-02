@@ -22,6 +22,7 @@ const COMPRESS_INPUT_LEN: usize = 3;
 
 #[async_trait]
 pub trait Agent: Send + Sync {
+    fn name(&self) -> &'static str;
     fn as_any(self: Box<Self>) -> Box<dyn Any>;
     fn setup(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         CpuAgent::new().setup(input)
