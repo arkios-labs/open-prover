@@ -12,10 +12,7 @@ pub enum Command {
     Wrap,
     Groth16,
     Plonk,
-    WrapCore,
     WrapCompress,
-    WrapGroth16,
-    WrapPlonk,
 }
 
 impl FromStr for Command {
@@ -31,10 +28,7 @@ impl FromStr for Command {
             "WRAP" => Ok(Command::Wrap),
             "GROTH16" => Ok(Command::Groth16),
             "PLONK" => Ok(Command::Plonk),
-            "WRAP_CORE" => Ok(Command::WrapCore),
             "WRAP_COMPRESS" => Ok(Command::WrapCompress),
-            "WRAP_GROTH16" => Ok(Command::WrapGroth16),
-            "WRAP_PLONK" => Ok(Command::WrapPlonk),
             _ => Err(anyhow::anyhow!("Unknown command type: {}", s)),
         }
     }
@@ -50,10 +44,7 @@ impl Command {
             Command::Wrap => agent.wrap(input),
             Command::Groth16 => agent.groth16(input),
             Command::Plonk => agent.plonk(input),
-            Command::WrapCore => agent.wrap_core(input),
             Command::WrapCompress => agent.wrap_compress(input),
-            Command::WrapGroth16 => agent.wrap_groth16(input),
-            Command::WrapPlonk => agent.wrap_plonk(input),
         }
     }
 }

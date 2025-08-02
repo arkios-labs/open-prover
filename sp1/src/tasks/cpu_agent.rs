@@ -1,4 +1,7 @@
-use crate::tasks::{Agent, COMPRESS_INPUT_LEN, PROVE_INPUT_LEN, PROVE_LIFT_INPUT_LEN};
+use crate::tasks::{
+    Agent, COMPRESS_INPUT_LEN, GROTH16_INPUT_LEN, PLONK_INPUT_LEN, PROVE_INPUT_LEN,
+    PROVE_LIFT_INPUT_LEN,
+};
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
@@ -6,11 +9,15 @@ use common::serialization::mpk::deserialize_from_msgpack_bytes;
 use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
-use sp1_prover::{CoreSC, InnerSC, OuterSC, SP1CircuitWitness, SP1Prover, SP1RecursionProverError};
+use sp1_prover::{
+    CoreSC, InnerSC, OuterSC, SP1CircuitWitness, SP1Prover, SP1PublicValues, SP1RecursionProverError,
+    SP1_CIRCUIT_VERSION,
+};
 use sp1_recursion_circuit::machine::{SP1CompressWitnessValues, SP1RecursionWitnessValues};
 use sp1_recursion_circuit::witness::Witnessable;
 use sp1_recursion_compiler::config::InnerConfig;
 use sp1_sdk::install::try_install_circuit_artifacts;
+use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
 use sp1_stark::{
     Challenge, MachineProver, SP1ProverOpts, StarkGenericConfig, StarkVerifyingKey, Val,
     DIGEST_SIZE,
@@ -431,9 +438,21 @@ impl Agent for CpuAgent {
         if input.is_empty() {
             bail!("groth16 input is empty");
         }
+        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
+            .context("Failed to parse input as Vec<Vec<u8>> in groth16")?;
+        let inputs_len = inputs.len();
+        if inputs_len != GROTH16_INPUT_LEN {
+            bail!("Expected {GROTH16_INPUT_LEN} inputs for groth16, got {inputs_len}");
+        }
 
-        let wrap_proof: SP1ReduceProof<OuterSC> =
-            deserialize_from_bincode_bytes(&input).context("Failed to deserialize wrap proof")?;
+        let public_values_path: String = deserialize_from_msgpack_bytes(&inputs[0])
+            .context("Failed to deserialize record path")?;
+        let public_values_vec = fs::read(&public_values_path)
+            .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
+        let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
+            .context("Failed to deserialize public values")?;
+        let wrap_proof: SP1ReduceProof<OuterSC> = deserialize_from_bincode_bytes(&inputs[1])
+            .context("Failed to deserialize wrap proof")?;
 
         let groth16_bn254_artifacts = if sp1_prover::build::sp1_dev_mode() {
             sp1_prover::build::try_build_groth16_bn254_artifacts_dev(
@@ -448,10 +467,16 @@ impl Agent for CpuAgent {
             .prover
             .wrap_groth16_bn254(wrap_proof, &groth16_bn254_artifacts);
 
-        let serialized =
-            serialize_to_bincode_bytes(&groth16_proof).context("Failed to serialize")?;
-        let elapsed = start_time.elapsed();
+        let groth16_proof_with_public_values: SP1ProofWithPublicValues = SP1ProofWithPublicValues {
+            proof: SP1Proof::Groth16(groth16_proof),
+            public_values,
+            sp1_version: SP1_CIRCUIT_VERSION.to_string(),
+            tee_proof: None,
+        };
 
+        let serialized = serialize_to_bincode_bytes(&groth16_proof_with_public_values)
+            .context("Failed to serialize")?;
+        let elapsed = start_time.elapsed();
         info!("CpuAgent::groth16() took {:?}", elapsed);
         Ok(serialized)
     }
@@ -463,9 +488,21 @@ impl Agent for CpuAgent {
         if input.is_empty() {
             bail!("plonk input is empty");
         }
+        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
+            .context("Failed to parse input as Vec<Vec<u8>> in plonk")?;
+        let inputs_len = inputs.len();
+        if inputs_len != PLONK_INPUT_LEN {
+            bail!("Expected {PLONK_INPUT_LEN} inputs for plonk, got {inputs_len}");
+        }
 
-        let wrap_proof: SP1ReduceProof<OuterSC> =
-            deserialize_from_bincode_bytes(&input).context("Failed to deserialize wrap proof")?;
+        let public_values_path: String = deserialize_from_msgpack_bytes(&inputs[0])
+            .context("Failed to deserialize record path")?;
+        let public_values_vec = fs::read(&public_values_path)
+            .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
+        let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
+            .context("Failed to deserialize public values")?;
+        let wrap_proof: SP1ReduceProof<OuterSC> = deserialize_from_bincode_bytes(&inputs[1])
+            .context("Failed to deserialize wrap proof")?;
 
         let plonk_bn254_artifacts = if sp1_prover::build::sp1_dev_mode() {
             sp1_prover::build::try_build_plonk_bn254_artifacts_dev(
@@ -480,9 +517,16 @@ impl Agent for CpuAgent {
             .prover
             .wrap_plonk_bn254(wrap_proof, &plonk_bn254_artifacts);
 
-        let serialized = serialize_to_bincode_bytes(&plonk_proof).context("Failed to serialize")?;
-        let elapsed = start_time.elapsed();
+        let plonk_proof_with_public_values: SP1ProofWithPublicValues = SP1ProofWithPublicValues {
+            proof: SP1Proof::Plonk(plonk_proof),
+            public_values,
+            sp1_version: SP1_CIRCUIT_VERSION.to_string(),
+            tee_proof: None,
+        };
 
+        let serialized = serialize_to_bincode_bytes(&plonk_proof_with_public_values)
+            .context("Failed to serialize")?;
+        let elapsed = start_time.elapsed();
         info!("CpuAgent::plonk() took {:?}", elapsed);
         Ok(serialized)
     }
