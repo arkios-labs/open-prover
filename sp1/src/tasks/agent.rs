@@ -3,7 +3,6 @@ use crate::tasks::{
     PROVE_INPUT_LEN, PROVE_LIFT_INPUT_LEN,
 };
 use anyhow::{bail, Context};
-use async_trait::async_trait;
 use cfg_if::cfg_if;
 use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
 use common::serialization::mpk::deserialize_from_msgpack_bytes;
@@ -48,7 +47,6 @@ impl Sp1Agent {
     }
 }
 
-#[async_trait]
 impl Agent for Sp1Agent {
     fn name(&self) -> &'static str {
         cfg_if! {

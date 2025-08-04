@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use sp1_prover::SP1Prover;
 use sp1_stark::SP1ProverOpts;
 use std::any::Any;
@@ -22,7 +21,6 @@ pub struct Sp1Agent {
     pub prover_opts: SP1ProverOpts,
 }
 
-#[async_trait]
 pub trait Agent: Send + Sync {
     fn name(&self) -> &'static str;
     fn as_any(self: Box<Self>) -> Box<dyn Any>;
