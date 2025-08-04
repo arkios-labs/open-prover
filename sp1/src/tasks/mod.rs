@@ -1,4 +1,3 @@
-use crate::tasks::cpu_agent::CpuAgent;
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
@@ -24,36 +23,14 @@ const COMPRESS_INPUT_LEN: usize = 3;
 pub trait Agent: Send + Sync {
     fn name(&self) -> &'static str;
     fn as_any(self: Box<Self>) -> Box<dyn Any>;
-    fn setup(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().setup(input)
-    }
-    fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().prove(input)
-    }
-
-    fn prove_lift(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().prove_lift(input)
-    }
-
-    fn compress(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().compress(input)
-    }
-
-    fn shrink(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().shrink(input)
-    }
-
-    fn wrap(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().wrap(input)
-    }
-
-    fn groth16(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().groth16(input)
-    }
-
-    fn plonk(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        CpuAgent::new().plonk(input)
-    }
+    fn setup(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn prove_lift(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn compress(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn shrink(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn wrap(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn groth16(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn plonk(&self, input: Vec<u8>) -> Result<Vec<u8>>;
 
     fn wrap_core(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::wrap_core()");
