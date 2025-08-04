@@ -56,15 +56,14 @@ impl Agent for GpuAgent {
 
     fn setup(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("GpuAgent::setup()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("shrink input is empty");
         }
-        let start_time = Instant::now();
 
         let elf_path: String =
             deserialize_from_msgpack_bytes(&input).context("Failed to deserialize ELF path")?;
-
         let elf_bytes = fs::read(&elf_path)
             .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
 
@@ -77,19 +76,16 @@ impl Agent for GpuAgent {
 
     fn prove(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("CpuAgent::prove()");
+        let start_time = Instant::now();
+
         if input.is_empty() {
             bail!("prove input is empty");
         }
-        let start_time = Instant::now();
-
         let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
             .context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != PROVE_INPUT_LEN {
-            bail!(
-                "Expected {PROVE_INPUT_LEN} inputs for prove, got {}",
-                inputs.len()
-            );
+        let inputs_len = inputs.len();
+        if inputs_len != PROVE_INPUT_LEN {
+            bail!("Expected {PROVE_INPUT_LEN} inputs for prove, got {inputs_len}");
         }
 
         let record_path: String = deserialize_from_msgpack_bytes(&inputs[0])
@@ -155,15 +151,11 @@ impl Agent for GpuAgent {
         if input.is_empty() {
             bail!("prove input is empty");
         }
-
         let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
             .context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != PROVE_LIFT_INPUT_LEN {
-            bail!(
-                "Expected {PROVE_LIFT_INPUT_LEN} inputs for prove_lift, got {}",
-                inputs.len()
-            );
+        let inputs_len = inputs.len();
+        if inputs_len != PROVE_LIFT_INPUT_LEN {
+            bail!("Expected {PROVE_LIFT_INPUT_LEN} inputs for prove_lift, got {inputs_len}");
         }
 
         let vk = deserialize_from_bincode_bytes::<StarkVerifyingKey<CoreSC>>(&inputs[2])
@@ -306,15 +298,11 @@ impl Agent for GpuAgent {
         if input.is_empty() {
             bail!("compress input is empty");
         }
-
         let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
             .context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != COMPRESS_INPUT_LEN {
-            bail!(
-                "Expected exactly {COMPRESS_INPUT_LEN} inputs for compress, got {}",
-                inputs.len()
-            );
+        let inputs_len = inputs.len();
+        if inputs_len != COMPRESS_INPUT_LEN {
+            bail!("Expected exactly {COMPRESS_INPUT_LEN} inputs for compress, got {inputs_len}");
         }
 
         let left: SP1ReduceProof<InnerSC> = deserialize_from_bincode_bytes(&inputs[0])
@@ -398,11 +386,11 @@ impl Agent for GpuAgent {
 
     fn shrink(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("GpuAgent::shrink()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("shrink input is empty");
         }
-        let start_time = Instant::now();
 
         let reduce_proof: SP1ReduceProof<InnerSC> =
             deserialize_from_bincode_bytes(&input).context("Failed to deserialize")?;
@@ -421,11 +409,11 @@ impl Agent for GpuAgent {
 
     fn wrap(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("GpuAgent::wrap()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("wrap input is empty");
         }
-        let start_time = Instant::now();
 
         let shrink_proof: SP1ReduceProof<InnerSC> =
             deserialize_from_bincode_bytes(&input).context("Failed to deserialize")?;
@@ -443,11 +431,11 @@ impl Agent for GpuAgent {
 
     fn groth16(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("GpuAgent::groth16()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("groth16 input is empty");
         }
-        let start_time = Instant::now();
 
         let wrap_proof: SP1ReduceProof<OuterSC> =
             deserialize_from_bincode_bytes(&input).context("Failed to deserialize")?;
@@ -474,11 +462,11 @@ impl Agent for GpuAgent {
 
     fn plonk(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("GpuAgent::plonk()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("plonk input is empty");
         }
-        let start_time = Instant::now();
         let wrap_proof: SP1ReduceProof<OuterSC> =
             deserialize_from_bincode_bytes(&input).context("Failed to deserialize")?;
 

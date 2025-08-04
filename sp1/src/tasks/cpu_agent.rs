@@ -48,11 +48,11 @@ impl Agent for CpuAgent {
 
     fn setup(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("CpuAgent::setup()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("shrink input is empty");
         }
-        let start_time = Instant::now();
 
         let elf_path: String =
             deserialize_from_msgpack_bytes(&input).context("Failed to deserialize ELF path")?;
@@ -69,19 +69,16 @@ impl Agent for CpuAgent {
 
     fn prove(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("CpuAgent::prove()");
+        let start_time = Instant::now();
+
         if input.is_empty() {
             bail!("prove input is empty");
         }
-        let start_time = Instant::now();
-
         let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
             .context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != PROVE_INPUT_LEN {
-            bail!(
-                "Expected {PROVE_INPUT_LEN} inputs for prove, got {}",
-                inputs.len()
-            );
+        let inputs_len = inputs.len();
+        if inputs_len != PROVE_INPUT_LEN {
+            bail!("Expected {PROVE_INPUT_LEN} inputs for prove, got {inputs_len}");
         }
 
         let record_path: String = deserialize_from_msgpack_bytes(&inputs[0])
@@ -148,15 +145,11 @@ impl Agent for CpuAgent {
         if input.is_empty() {
             bail!("prove input is empty");
         }
-
         let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
             .context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != PROVE_LIFT_INPUT_LEN {
-            bail!(
-                "Expected {PROVE_LIFT_INPUT_LEN} inputs for prove_lift, got {}",
-                inputs.len()
-            );
+        let inputs_len = inputs.len();
+        if inputs_len != PROVE_LIFT_INPUT_LEN {
+            bail!("Expected {PROVE_LIFT_INPUT_LEN} inputs for prove_lift, got {inputs_len}");
         }
 
         let vk = deserialize_from_bincode_bytes::<StarkVerifyingKey<CoreSC>>(&inputs[2])
@@ -298,15 +291,11 @@ impl Agent for CpuAgent {
         if input.is_empty() {
             bail!("compress input is empty");
         }
-
         let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
             .context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != COMPRESS_INPUT_LEN {
-            bail!(
-                "Expected exactly {COMPRESS_INPUT_LEN} inputs for compress, got {}",
-                inputs.len()
-            );
+        let inputs_len = inputs.len();
+        if inputs_len != COMPRESS_INPUT_LEN {
+            bail!("Expected exactly {COMPRESS_INPUT_LEN} inputs for compress, got {inputs_len}");
         }
 
         let left: SP1ReduceProof<InnerSC> = deserialize_from_bincode_bytes(&inputs[0])
@@ -390,11 +379,11 @@ impl Agent for CpuAgent {
 
     fn shrink(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("CpuAgent::shrink()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("shrink input is empty");
         }
-        let start_time = Instant::now();
 
         let reduce_proof: SP1ReduceProof<InnerSC> =
             deserialize_from_bincode_bytes(&input).context("Failed to deserialize reduce proof")?;
@@ -414,11 +403,11 @@ impl Agent for CpuAgent {
 
     fn wrap(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("CpuAgent::wrap()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("wrap input is empty");
         }
-        let start_time = Instant::now();
 
         let shrink_proof: SP1ReduceProof<InnerSC> =
             deserialize_from_bincode_bytes(&input).context("Failed to deserialize shrink proof")?;
@@ -437,11 +426,11 @@ impl Agent for CpuAgent {
 
     fn groth16(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("CpuAgent::groth16()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("groth16 input is empty");
         }
-        let start_time = Instant::now();
 
         let wrap_proof: SP1ReduceProof<OuterSC> =
             deserialize_from_bincode_bytes(&input).context("Failed to deserialize wrap proof")?;
@@ -470,6 +459,7 @@ impl Agent for CpuAgent {
     fn plonk(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("CpuAgent::plonk()");
         let start_time = Instant::now();
+
         if input.is_empty() {
             bail!("plonk input is empty");
         }
