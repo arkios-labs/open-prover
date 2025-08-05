@@ -34,5 +34,4 @@ node_modules
 
 # sp1
 ./sp1/pk_device.mpk
-./sp1/metadata
 ./sp1-cpu

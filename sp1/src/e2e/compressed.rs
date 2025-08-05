@@ -26,9 +26,9 @@ mod tests {
         let vk = cpu_agent.setup(elf_path_packed.clone())?;
         let mut lifted_proofs = Vec::new();
 
-        for i in 1..=7 {
+        for i in 1..=3 {
             let record_path = metadata_dir.join(format!(
-                "shard_size_18/fibonacci-elf_shardsize_18_cycles_1M_record_{}.bin",
+                "record/fibonacci-elf_shardsize_14_record_{}.bin",
                 i
             ));
             let record_path_packed = serialize_to_msgpack_bytes(&record_path)?;
@@ -106,12 +106,6 @@ mod tests {
             .verify_compressed(&final_proof, &vk)
             .expect("Compressed proof verification failed");
 
-        fs::write(
-            metadata_dir
-                .join("shard_size_18/fibonacci-elf_shard_size_18_cycles_1M_compressed_proof.bin"),
-            final_proof_vec,
-        )?;
-
         Ok(())
     }
 
@@ -120,11 +114,10 @@ mod tests {
         let (metadata_dir, cpu_agent) =
             setup_cpu_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let pv_path =
-            metadata_dir.join("shard_size_18/fibonacci-elf_shardsize_18_cycles_1M_pv.bin");
+        let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
-        let compressed_proof_path = metadata_dir
-            .join("shard_size_18/fibonacci-elf_shard_size_18_cycles_1M_compressed_proof.bin");
+        let compressed_proof_path =
+            metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin");
         let compressed_proof =
             fs::read(&compressed_proof_path).context("Failed to read compressed proof")?;
 
