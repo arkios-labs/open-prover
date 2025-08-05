@@ -25,9 +25,9 @@ mod tests {
 
         let prover = &cpu_agent.prover;
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(serialized_elf_path)?;
+        let vk = cpu_agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
@@ -57,16 +57,16 @@ mod tests {
         let pv_path =
             metadata_dir.join("shard_size_18/fibonacci-elf_shardsize_18_cycles_1M_pv.bin");
 
-        let pv_path = serialize_to_msgpack_bytes(&pv_path)?;
+        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
         let groth16_proof_path = metadata_dir
             .join("shard_size_18/fibonacci-elf_shard_size_18_cycles_1M_groth16_proof.bin");
         let groth16_proof =
             fs::read(&groth16_proof_path).context("Failed to read groth16 proof")?;
 
-        let inputs: Vec<Vec<u8>> = vec![pv_path, groth16_proof];
-        let packed = serialize_to_msgpack_bytes(&inputs).unwrap();
+        let inputs: Vec<Vec<u8>> = vec![pv_path_packed, groth16_proof];
+        let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
 
-        let wrapped_groth16_proof = cpu_agent.wrap_groth16(packed)?;
+        let wrapped_groth16_proof = cpu_agent.wrap_groth16(inputs_packed)?;
 
         Ok(())
     }

@@ -28,9 +28,9 @@ mod tests {
         let metadata_dir = PathBuf::from(&home_dir).join("zkrabbit").join("sp1").join("metadata");
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(serialized_elf_path)?;
+        let vk = cpu_agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 

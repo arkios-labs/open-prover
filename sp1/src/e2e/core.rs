@@ -33,9 +33,9 @@ mod tests {
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(serialized_elf_path.clone())?;
+        let vk = cpu_agent.setup(elf_path_packed.clone())?;
         for i in 1..=7 {
             let record_path = metadata_dir.join(format!(
                 "shard_size_18/fibonacci-elf_shardsize_18_cycles_1M_record_{}.bin",
@@ -46,10 +46,10 @@ mod tests {
             let elf_path = metadata_dir.join("elf/fibonacci-elf");
             let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
             let inputs: Vec<Vec<u8>> =
-                vec![record_path_serialized, serialized_elf_path, vk.clone()];
-            let packed = serialize_to_msgpack_bytes(&inputs).unwrap();
+                vec![record_path_serialized, elf_path_packed.clone(), vk.clone()];
+            let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
 
-            let shard_proof_serialized = cpu_agent.prove(packed).unwrap();
+            let shard_proof_serialized = cpu_agent.prove(inputs_packed).unwrap();
             let shard_proof: ShardProof<CoreSC> =
                 deserialize_from_bincode_bytes(&shard_proof_serialized).unwrap();
 
@@ -69,7 +69,7 @@ mod tests {
         )
         .unwrap();
 
-        let vk = cpu_agent.setup(serialized_elf_path)?;
+        let vk = cpu_agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
@@ -170,9 +170,9 @@ mod tests {
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/keccak-elf");
-        let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(serialized_elf_path.clone())?;
+        let vk = cpu_agent.setup(elf_path_packed.clone())?;
         for i in 1..=8 {
             let record_path = metadata_dir.join(format!(
                 "shard_size_18/keccak-elf_shardsize_18_cycles_1M_record_{}.bin",
@@ -183,10 +183,10 @@ mod tests {
             let elf_path = metadata_dir.join("elf/keccak-elf");
             let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
             let inputs: Vec<Vec<u8>> =
-                vec![record_path_serialized, serialized_elf_path, vk.clone()];
-            let packed = serialize_to_msgpack_bytes(&inputs).unwrap();
+                vec![record_path_serialized, elf_path_packed.clone(), vk.clone()];
+            let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
 
-            let shard_proof_serialized = cpu_agent.prove(packed).unwrap();
+            let shard_proof_serialized = cpu_agent.prove(inputs_packed).unwrap();
             let shard_proof: ShardProof<CoreSC> =
                 deserialize_from_bincode_bytes(&shard_proof_serialized).unwrap();
 
@@ -206,7 +206,7 @@ mod tests {
         )
         .unwrap();
 
-        let vk = cpu_agent.setup(serialized_elf_path)?;
+        let vk = cpu_agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 

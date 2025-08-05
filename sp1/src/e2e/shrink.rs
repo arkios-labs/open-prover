@@ -25,9 +25,9 @@ mod tests {
 
         let prover = &cpu_agent.prover;
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(serialized_elf_path)?;
+        let vk = cpu_agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
         prover.verify_shrink(&shrink_proof, &vk).expect("Core proof verification failed");
