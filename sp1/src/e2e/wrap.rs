@@ -7,38 +7,31 @@ mod tests {
     use common::serialization::mpk::serialize_to_msgpack_bytes;
     use sp1_prover::{CoreSC, SP1VerifyingKey};
     use sp1_stark::StarkVerifyingKey;
-    use std::path::PathBuf;
-    use std::{env, fs};
+    use std::fs;
 
     #[test]
     fn test_e2e_wrap_proof_generation() -> anyhow::Result<()> {
         let (metadata_dir, cpu_agent) =
             setup_cpu_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let shrink_proof = fs::read(
-            metadata_dir
-                .join("shard_size_18/fibonacci-elf_shard_size_18_cycles_1M_shrink_proof.bin"),
-        )?;
+        let shrink_proof =
+            fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_shrink_proof.bin"))?;
 
         let wrap_proof_vec = cpu_agent.wrap(shrink_proof).unwrap();
         let wrap_proof = deserialize_from_bincode_bytes(&wrap_proof_vec).unwrap();
 
         let prover = &cpu_agent.prover;
-        let home_dir = env::var("HOME").expect("HOME environment variable not set");
-        let metadata_dir = PathBuf::from(&home_dir).join("zkrabbit").join("sp1").join("metadata");
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let serialized_elf_path = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(serialized_elf_path)?;
+        let vk = cpu_agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
-        prover.verify_wrap_bn254(&wrap_proof, &vk).expect("Core proof verification failed");
-        fs::write(
-            metadata_dir.join("shard_size_18/fibonacci-elf_shard_size_18_cycles_1M_wrap_proof.bin"),
-            wrap_proof_vec,
-        )?;
+        prover
+            .verify_wrap_bn254(&wrap_proof, &vk)
+            .expect("Wrap proof verification failed");
 
         Ok(())
     }
