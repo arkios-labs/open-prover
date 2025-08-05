@@ -58,7 +58,7 @@ impl Agent for CpuAgent {
         let start_time = Instant::now();
 
         if input.is_empty() {
-            bail!("shrink input is empty");
+            bail!("setup input is empty");
         }
 
         let elf_path: String =
