@@ -1,16 +1,17 @@
 use crate::tasks::{
-    Agent, COMPRESS_INPUT_LEN, GROTH16_INPUT_LEN, PLONK_INPUT_LEN, PROVE_INPUT_LEN,
-    PROVE_LIFT_INPUT_LEN,
+    Agent, Sp1Agent, COMPRESS_INPUT_LEN, GROTH16_INPUT_LEN, PLONK_INPUT_LEN,
+    PROVE_INPUT_LEN, PROVE_LIFT_INPUT_LEN,
 };
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use cfg_if::cfg_if;
 use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
 use common::serialization::mpk::deserialize_from_msgpack_bytes;
 use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
 use sp1_prover::{
-    CoreSC, InnerSC, OuterSC, SP1CircuitWitness, SP1Prover, SP1PublicValues, SP1RecursionProverError,
+    CoreSC, InnerSC, OuterSC, SP1CircuitWitness, SP1PublicValues, SP1RecursionProverError,
     SP1_CIRCUIT_VERSION,
 };
 use sp1_recursion_circuit::machine::{SP1CompressWitnessValues, SP1RecursionWitnessValues};
@@ -19,8 +20,8 @@ use sp1_recursion_compiler::config::InnerConfig;
 use sp1_sdk::install::try_install_circuit_artifacts;
 use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
 use sp1_stark::{
-    Challenge, MachineProver, SP1ProverOpts, StarkGenericConfig, StarkVerifyingKey, Val,
-    DIGEST_SIZE,
+    Challenge, MachineProver, MachineProvingKey, SP1ProverOpts, StarkGenericConfig, StarkVerifyingKey,
+    Val, DIGEST_SIZE,
 };
 use std::any::Any;
 use std::fs;
@@ -29,24 +30,34 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
-pub struct CpuAgent {
-    pub prover: Arc<SP1Prover>,
-    pub prover_opts: SP1ProverOpts,
-}
-
-impl CpuAgent {
-    pub fn new() -> Self {
-        Self {
-            prover: Arc::new(SP1Prover::new()),
-            prover_opts: SP1ProverOpts::default(),
+impl Sp1Agent {
+    pub fn new() -> anyhow::Result<Self> {
+        cfg_if! {
+            if #[cfg(feature = "gpu")] {
+                let inner_prover = moongate_prover::SP1GpuProver::new();
+            } else {
+                let inner_prover = sp1_prover::SP1Prover::new();
+            }
         }
+        let prover = Arc::new(inner_prover);
+
+        Ok(Self {
+            prover,
+            prover_opts: SP1ProverOpts::default(),
+        })
     }
 }
 
 #[async_trait]
-impl Agent for CpuAgent {
+impl Agent for Sp1Agent {
     fn name(&self) -> &'static str {
-        "sp1-cpu"
+        cfg_if! {
+            if #[cfg(feature = "gpu")] {
+                "sp1-gpu"
+            } else {
+                "sp1-cpu"
+            }
+        }
     }
 
     fn as_any(self: Box<Self>) -> Box<dyn Any> {
@@ -54,11 +65,11 @@ impl Agent for CpuAgent {
     }
 
     fn setup(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::setup()");
         let start_time = Instant::now();
 
+        info!("Agent::setup()");
         if input.is_empty() {
-            bail!("shrink input is empty");
+            bail!("setup input is empty");
         }
 
         let elf_path: String =
@@ -70,12 +81,12 @@ impl Agent for CpuAgent {
         let (_, _pkey, _, vkey) = self.prover.setup(&elf_bytes);
         let vkey = serialize_to_bincode_bytes(&vkey).context("Failed to serialize vkey")?;
         let elapsed = start_time.elapsed();
-        info!("CpuAgent::setup() took {:?}", elapsed);
+        info!("Agent::setup() took {:?}", elapsed);
         Ok(vkey)
     }
 
     fn prove(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::prove()");
+        info!("Agent::prove()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -141,12 +152,12 @@ impl Agent for CpuAgent {
 
         let serialized = serialize_to_bincode_bytes(&shard_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("CpuAgent::prove() took {:?}", elapsed);
+        info!("Agent::prove() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn prove_lift(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::prove_lift()");
+        info!("Agent::prove_lift()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -292,7 +303,7 @@ impl Agent for CpuAgent {
     }
 
     fn compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::compress()");
+        info!("Agent::compress()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -380,12 +391,12 @@ impl Agent for CpuAgent {
             .context("Failed to serialize compressed proof")?;
 
         let elapsed = start_time.elapsed();
-        info!("CpuAgent::compress() took {:?}", elapsed);
+        info!("Agent::compress() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn shrink(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::shrink()");
+        info!("Agent::shrink()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -403,13 +414,12 @@ impl Agent for CpuAgent {
         let serialized =
             serialize_to_bincode_bytes(&shrink_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-
-        info!("CpuAgent::shrink() took {:?}", elapsed);
+        info!("Agent::shrink() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn wrap(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::wrap()");
+        info!("Agent::wrap()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -426,13 +436,12 @@ impl Agent for CpuAgent {
 
         let serialized = serialize_to_bincode_bytes(&wrap_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-
-        info!("CpuAgent::wrap() took {:?}", elapsed);
+        info!("Agent::wrap() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn groth16(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::groth16()");
+        info!("Agent::groth16()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -477,12 +486,12 @@ impl Agent for CpuAgent {
         let serialized = serialize_to_bincode_bytes(&groth16_proof_with_public_values)
             .context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("CpuAgent::groth16() took {:?}", elapsed);
+        info!("Agent::groth16() took {:?}", elapsed);
         Ok(serialized)
     }
 
     fn plonk(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("CpuAgent::plonk()");
+        info!("Agent::plonk()");
         let start_time = Instant::now();
 
         if input.is_empty() {
@@ -527,7 +536,44 @@ impl Agent for CpuAgent {
         let serialized = serialize_to_bincode_bytes(&plonk_proof_with_public_values)
             .context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("CpuAgent::plonk() took {:?}", elapsed);
+        info!("Agent::plonk() took {:?}", elapsed);
+        Ok(serialized)
+    }
+
+    fn wrap_compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+        info!("Agent::wrap_compress()");
+        if input.is_empty() {
+            bail!("wrap_compress input is empty");
+        }
+
+        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
+            .context("Failed to parse input as Vec<Vec<u8>>")?;
+
+        if inputs.len() != 2 {
+            bail!("Expected 2 inputs for wrap_compress, got {}", inputs.len());
+        }
+
+        let public_values_path: String = deserialize_from_msgpack_bytes(&inputs[0])
+            .context("Failed to deserialize record path")?;
+
+        let compress_proof: SP1ReduceProof<InnerSC> = deserialize_from_bincode_bytes(&inputs[1])
+            .context("Failed to deserialize compress proof")?;
+
+        let public_values_vec = fs::read(&public_values_path)
+            .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
+
+        let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
+            .context("Failed to deserialize public values")?;
+
+        let compressed_proof_with_public_values: SP1ProofWithPublicValues =
+            SP1ProofWithPublicValues {
+                proof: SP1Proof::Compressed(Box::from(compress_proof)),
+                public_values,
+                sp1_version: SP1_CIRCUIT_VERSION.to_string(),
+                tee_proof: None,
+            };
+        let serialized = serialize_to_bincode_bytes(&compressed_proof_with_public_values)
+            .expect("Failed to serialize");
         Ok(serialized)
     }
 }

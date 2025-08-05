@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::e2e::tests::setup_cpu_agent_and_metadata_dir;
+    use crate::e2e::tests::setup_agent_and_metadata_dir;
     use crate::tasks::Agent;
     use anyhow::{anyhow, Context};
     use common::serialization::bincode::deserialize_from_bincode_bytes;
@@ -16,7 +16,7 @@ mod tests {
     async fn test_e2e_fibonacci_binary_tree_based_compressed_proof_generation() -> anyhow::Result<()>
     {
         let (metadata_dir, cpu_agent) =
-            setup_cpu_agent_and_metadata_dir().context("Failed to setup")?;
+            setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let prover = &cpu_agent.prover;
 
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn test_wrap_compress_proof() -> anyhow::Result<()> {
         let (metadata_dir, cpu_agent) =
-            setup_cpu_agent_and_metadata_dir().context("Failed to setup")?;
+            setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
