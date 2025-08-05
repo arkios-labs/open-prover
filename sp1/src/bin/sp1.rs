@@ -6,8 +6,7 @@ use std::io::{Read, Write};
 use std::{env, io};
 use tracing::info;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_writer(io::stderr)
@@ -17,20 +16,20 @@ async fn main() -> Result<()> {
         .context("Missing TASK_TYPE")?
         .parse()?;
 
-    let agent = Sp1Agent::new()?;
+    let sp1_agent = Sp1Agent::new()?;
     info!(
         "Running AGENT_TYPE={} with TASK_TYPE={:?}",
-        agent.name(),
+        sp1_agent.name(),
         task_type
     );
-
-    let agent_ref: &dyn Agent = &agent;
 
     let mut stdin = io::stdin();
     let mut input_bytes = Vec::new();
     stdin.read_to_end(&mut input_bytes)?;
 
-    let result_bytes = task_type.apply(agent_ref, input_bytes).await?;
+    let result_bytes = task_type
+        .apply(&sp1_agent, input_bytes)
+        .context("Failed to execute task")?;
 
     let mut stdout = io::stdout();
     stdout.write_all(&result_bytes)?;

@@ -12,9 +12,8 @@ mod tests {
     use std::fs;
     use tracing::info;
 
-    #[tokio::test]
-    async fn test_e2e_fibonacci_binary_tree_based_compressed_proof_generation() -> anyhow::Result<()>
-    {
+    #[test]
+    fn test_e2e_fibonacci_binary_tree_based_compressed_proof_generation() -> anyhow::Result<()> {
         let (metadata_dir, cpu_agent) =
             setup_agent_and_metadata_dir().context("Failed to setup")?;
 
