@@ -25,6 +25,9 @@ node_modules
 ./risc0/stark_verify.dat
 ./risc0/stark_verify_final.pk.dmp
 
+# common
+.env
+
 # risc0
 ./risc0/python/__pycache__/
 ./risc0/python/tasks/__pycache__/
