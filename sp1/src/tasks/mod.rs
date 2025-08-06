@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use sp1_prover::SP1Prover;
 use sp1_stark::SP1ProverOpts;
 use std::any::Any;

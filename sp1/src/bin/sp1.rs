@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use common::io::input::env::EnvProvider;
 use sp1::command::registry::Command;
 use sp1::tasks::{Agent, Sp1Agent};
 use std::io::{Read, Write};
