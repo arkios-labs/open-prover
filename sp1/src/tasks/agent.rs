@@ -63,8 +63,8 @@ impl Agent for Sp1Agent {
     }
 
     fn setup(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        let start_time = Instant::now();
         info!("Agent::setup()");
+        let start_time = Instant::now();
 
         let Msgpack(elf_path): Msgpack<String> =
             parse_single_input(&input).context("Failed to parse input")?;
