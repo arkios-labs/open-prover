@@ -27,4 +27,7 @@ pub trait Agent: Send + Sync {
     fn groth16(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn plonk(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn wrap_compress(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn verify_compress(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn verify_groth16(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn verify_plonk(&self, input: Vec<u8>) -> Result<Vec<u8>>;
 }

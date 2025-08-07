@@ -11,7 +11,7 @@ use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
 use sp1_prover::{
     CoreSC, InnerSC, OuterSC, SP1CircuitWitness, SP1PublicValues, SP1RecursionProverError,
-    SP1_CIRCUIT_VERSION,
+    SP1VerifyingKey, SP1_CIRCUIT_VERSION,
 };
 use sp1_recursion_circuit::machine::{SP1CompressWitnessValues, SP1RecursionWitnessValues};
 use sp1_recursion_circuit::witness::Witnessable;
@@ -19,8 +19,8 @@ use sp1_recursion_compiler::config::InnerConfig;
 use sp1_sdk::install::try_install_circuit_artifacts;
 use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
 use sp1_stark::{
-    Challenge, MachineProver, MachineProvingKey, SP1ProverOpts, StarkGenericConfig, StarkVerifyingKey,
-    Val, DIGEST_SIZE,
+    Challenge, MachineProver, SP1ProverOpts, StarkGenericConfig, StarkVerifyingKey, Val,
+    DIGEST_SIZE,
 };
 use std::any::Any;
 use std::fs;
@@ -496,5 +496,94 @@ impl Agent for Sp1Agent {
         let serialized = serialize_to_bincode_bytes(&compressed_proof_with_public_values)
             .expect("Failed to serialize");
         Ok(serialized)
+    }
+
+    fn verify_compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+        info!("Agent::verify_compressed()");
+        let start_time = Instant::now();
+
+        let (Bincode(compressed_proof), Bincode(vk)): (
+            Bincode<SP1ProofWithPublicValues>,
+            Bincode<StarkVerifyingKey<CoreSC>>,
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+
+        let vk = SP1VerifyingKey { vk };
+
+        self.prover
+            .verify_compressed(&compressed_proof.proof.try_as_compressed().unwrap(), &vk)
+            .context("Compressed proof verification failed")?;
+
+        let result = serialize_to_bincode_bytes(&true).context("Failed to serialize result")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::verify_compressed() took {:?}", elapsed);
+        Ok(result)
+    }
+
+    fn verify_groth16(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+        info!("Agent::verify_groth16()");
+        let start_time = Instant::now();
+
+        let (Bincode(groth16_proof), (Bincode(vk), Msgpack(public_values_path))): (
+            Bincode<SP1ProofWithPublicValues>,
+            (Bincode<StarkVerifyingKey<CoreSC>>, Msgpack<String>),
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+
+        let vk = SP1VerifyingKey { vk };
+
+        let public_values_vec = fs::read(&public_values_path)
+            .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
+
+        let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
+            .context("Failed to deserialize public values")?;
+
+        let groth16_bn254_artifacts = try_install_circuit_artifacts("groth16");
+
+        self.prover
+            .verify_groth16_bn254(
+                &groth16_proof.proof.try_as_groth_16().unwrap(),
+                &vk,
+                &public_values,
+                &groth16_bn254_artifacts,
+            )
+            .context("Groth16 proof verification failed")?;
+
+        let result = serialize_to_bincode_bytes(&true).context("Failed to serialize result")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::verify_groth16() took {:?}", elapsed);
+        Ok(result)
+    }
+
+    fn verify_plonk(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+        info!("Agent::verify_plonk()");
+        let start_time = Instant::now();
+
+        let (Bincode(plonk_proof), (Bincode(vk), Msgpack(public_values_path))): (
+            Bincode<SP1ProofWithPublicValues>,
+            (Bincode<StarkVerifyingKey<CoreSC>>, Msgpack<String>),
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+
+        let vk = SP1VerifyingKey { vk };
+
+        let public_values_vec = fs::read(&public_values_path)
+            .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
+
+        let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
+            .context("Failed to deserialize public values")?;
+
+        let plonk_bn254_artifacts = try_install_circuit_artifacts("plonk");
+
+        self.prover
+            .verify_plonk_bn254(
+                &plonk_proof.proof.try_as_plonk().unwrap(),
+                &vk,
+                &public_values,
+                &plonk_bn254_artifacts,
+            )
+            .context("Plonk proof verification failed")?;
+
+        let result = serialize_to_bincode_bytes(&true).context("Failed to serialize result")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::verify_plonk() took {:?}", elapsed);
+        Ok(result)
     }
 }

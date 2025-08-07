@@ -55,4 +55,40 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_verify_groth16_proof() -> anyhow::Result<()> {
+        let (metadata_dir, cpu_agent) =
+            setup_agent_and_metadata_dir().context("Failed to setup")?;
+
+        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize")?;
+
+        let vk = cpu_agent
+            .setup(elf_path_packed)
+            .context("Failed to setup")?;
+
+        let groth16_proof_path =
+            metadata_dir.join("proof/fibonacci-elf_shard_size_14_groth16_proof.bin");
+        let groth16_proof_file =
+            fs::read(&groth16_proof_path).context("Failed to read groth16 proof")?;
+
+        let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
+        let pv_path_packed =
+            serialize_to_msgpack_bytes(&pv_path).context("Failed to serialize pv")?;
+
+        let verify_inputs: Vec<Vec<u8>> = vec![groth16_proof_file, vk, pv_path_packed];
+        let verify_inputs_packed =
+            serialize_to_msgpack_bytes(&verify_inputs).context("Failed to serialize")?;
+
+        let verify_result = cpu_agent
+            .verify_groth16(verify_inputs_packed)
+            .context("Failed to verify")?;
+        let verify_success: bool =
+            deserialize_from_bincode_bytes(&verify_result).context("Failed to deserialize")?;
+        assert!(verify_success, "Groth16 proof verification should succeed");
+
+        Ok(())
+    }
 }
