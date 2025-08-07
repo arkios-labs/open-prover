@@ -20,7 +20,7 @@ mod tests {
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
 
         let wrap_proof =
-            fs::read(metadata_dir.join("public_value/fibonacci-elf_shard_size_14_wrap_proof.bin"))?;
+            fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_wrap_proof.bin"))?;
 
         let inputs: Vec<Vec<u8>> = vec![pv_path_packed, wrap_proof];
         let inputs_packed =
