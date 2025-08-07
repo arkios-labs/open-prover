@@ -474,6 +474,7 @@ impl Agent for Sp1Agent {
 
     fn wrap_compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("Agent::wrap_compress()");
+        let start_time = Instant::now();
 
         let (Msgpack(public_values_path), Bincode(compress_proof)): (
             Msgpack<String>,
@@ -495,6 +496,8 @@ impl Agent for Sp1Agent {
             };
         let serialized = serialize_to_bincode_bytes(&compressed_proof_with_public_values)
             .expect("Failed to serialize");
+        let elapsed = start_time.elapsed();
+        info!("Agent::wrap_compress() took {:?}", elapsed);
         Ok(serialized)
     }
 
