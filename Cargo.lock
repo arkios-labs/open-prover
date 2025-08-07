@@ -1991,7 +1991,10 @@ dependencies = [
  "memmap2",
  "rmp-serde",
  "serde",
+ "serde_bytes",
  "serde_json",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -6486,6 +6489,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bytes"
+version = "0.11.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8437fd221bde2d4ca316d61b90e337e9e702b3820b87d63caa9ba6c02bd06d96"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6741,6 +6753,7 @@ dependencies = [
  "p3-field",
  "p3-matrix",
  "p3-merkle-tree",
+ "serde_bytes",
  "sp1-core-executor",
  "sp1-core-machine",
  "sp1-prover",
@@ -6750,6 +6763,7 @@ dependencies = [
  "sp1-recursion-gnark-ffi",
  "sp1-sdk",
  "sp1-stark",
+ "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
 ]
