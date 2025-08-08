@@ -13,6 +13,9 @@ pub enum Command {
     Groth16,
     Plonk,
     WrapCompress,
+    VerifyCompress,
+    VerifyGroth16,
+    VerifyPlonk,
 }
 
 impl FromStr for Command {
@@ -29,6 +32,9 @@ impl FromStr for Command {
             "GROTH16" => Ok(Command::Groth16),
             "PLONK" => Ok(Command::Plonk),
             "WRAP_COMPRESS" => Ok(Command::WrapCompress),
+            "VERIFY_COMPRESS" => Ok(Command::VerifyCompress),
+            "VERIFY_GROTH16" => Ok(Command::VerifyGroth16),
+            "VERIFY_PLONK" => Ok(Command::VerifyPlonk),
             _ => Err(anyhow::anyhow!("Unknown command type: {}", s)),
         }
     }
@@ -45,6 +51,9 @@ impl Command {
             Command::Groth16 => agent.groth16(input),
             Command::Plonk => agent.plonk(input),
             Command::WrapCompress => agent.wrap_compress(input),
+            Command::VerifyCompress => agent.verify_compress(input),
+            Command::VerifyGroth16 => agent.verify_groth16(input),
+            Command::VerifyPlonk => agent.verify_plonk(input),
         }
     }
 }

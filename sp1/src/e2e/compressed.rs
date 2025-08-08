@@ -127,4 +127,34 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_verify_compress_proof() -> anyhow::Result<()> {
+        let (metadata_dir, cpu_agent) =
+            setup_agent_and_metadata_dir().context("Failed to setup")?;
+
+        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+
+        let vk = cpu_agent
+            .setup(elf_path_packed)
+            .context("Failed to setup")?;
+
+        let compressed_proof_path =
+            metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin");
+        let compressed_proof =
+            fs::read(&compressed_proof_path).context("Failed to read compressed proof")?;
+
+        let verify_inputs: Vec<Vec<u8>> = vec![compressed_proof, vk];
+        let verify_inputs_packed = serialize_to_msgpack_bytes(&verify_inputs)?;
+
+        let verify_result = cpu_agent.verify_compress(verify_inputs_packed)?;
+        let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)?;
+        assert!(
+            verify_success,
+            "Compressed proof verification should succeed"
+        );
+
+        Ok(())
+    }
 }

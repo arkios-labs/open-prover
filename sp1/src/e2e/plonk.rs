@@ -20,7 +20,7 @@ mod tests {
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
 
         let wrap_proof =
-            fs::read(metadata_dir.join("public_value/fibonacci-elf_shard_size_14_wrap_proof.bin"))?;
+            fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_wrap_proof.bin"))?;
 
         let inputs: Vec<Vec<u8>> = vec![pv_path_packed, wrap_proof];
         let inputs_packed =
@@ -51,6 +51,34 @@ mod tests {
                 &plonk_circuit_artifacts_dir(),
             )
             .expect("Core proof verification failed");
+        Ok(())
+    }
+
+    #[test]
+    fn test_verify_plonk_proof() -> anyhow::Result<()> {
+        let (metadata_dir, cpu_agent) =
+            setup_agent_and_metadata_dir().context("Failed to setup")?;
+
+        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+
+        let vk = cpu_agent
+            .setup(elf_path_packed)
+            .context("Failed to setup")?;
+
+        let plonk_proof_path =
+            metadata_dir.join("proof/fibonacci-elf_shard_size_14_plonk_proof.bin");
+        let plonk_proof = fs::read(&plonk_proof_path).context("Failed to read plonk proof")?;
+
+        let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
+        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
+
+        let verify_inputs: Vec<Vec<u8>> = vec![plonk_proof, vk, pv_path_packed];
+        let verify_inputs_packed = serialize_to_msgpack_bytes(&verify_inputs)?;
+
+        let verify_result = cpu_agent.verify_plonk(verify_inputs_packed)?;
+        let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)?;
+        assert!(verify_success, "Plonk proof verification should succeed");
 
         Ok(())
     }
