@@ -2,7 +2,6 @@ mod compressed;
 mod core;
 mod groth16;
 mod plonk;
-mod shrink;
 mod wrap;
 
 #[cfg(test)]

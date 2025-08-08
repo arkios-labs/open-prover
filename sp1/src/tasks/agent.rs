@@ -353,8 +353,8 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn shrink(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("Agent::shrink()");
+    fn shrink_wrap(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+        info!("Agent::shrink_wrap()");
         let start_time = Instant::now();
 
         let Bincode(reduce_proof): Bincode<SP1ReduceProof<InnerSC>> =
@@ -365,20 +365,6 @@ impl Agent for Sp1Agent {
             .shrink(reduce_proof, self.prover_opts)
             .context("Failed to shrink")?;
 
-        let serialized =
-            serialize_to_bincode_bytes(&shrink_proof).context("Failed to serialize")?;
-        let elapsed = start_time.elapsed();
-        info!("Agent::shrink() took {:?}", elapsed);
-        Ok(serialized)
-    }
-
-    fn wrap(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        info!("Agent::wrap()");
-        let start_time = Instant::now();
-
-        let Bincode(shrink_proof): Bincode<SP1ReduceProof<InnerSC>> =
-            parse_single_input(&input).context("Failed to parse input")?;
-
         let wrap_proof = self
             .prover
             .wrap_bn254(shrink_proof, self.prover_opts)
@@ -386,7 +372,7 @@ impl Agent for Sp1Agent {
 
         let serialized = serialize_to_bincode_bytes(&wrap_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
-        info!("Agent::wrap() took {:?}", elapsed);
+        info!("Agent::shrink_wrap() took {:?}", elapsed);
         Ok(serialized)
     }
 
