@@ -29,6 +29,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
+#[cfg(feature = "gpu")]
+use sp1_stark::MachineProvingKey;
+
 impl Sp1Agent {
     pub fn new() -> anyhow::Result<Self> {
         cfg_if! {

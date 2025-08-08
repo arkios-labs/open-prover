@@ -6,7 +6,7 @@ use std::sync::Arc;
 mod agent;
 
 #[cfg(feature = "gpu")]
-pub type ClusterProverComponents = GpuProverComponents;
+pub type ClusterProverComponents = moongate_prover::components::GpuProverComponents;
 #[cfg(not(feature = "gpu"))]
 pub type ClusterProverComponents = sp1_prover::components::CpuProverComponents;
 
