@@ -10,12 +10,6 @@ pub type ClusterProverComponents = GpuProverComponents;
 #[cfg(not(feature = "gpu"))]
 pub type ClusterProverComponents = sp1_prover::components::CpuProverComponents;
 
-const PROVE_INPUT_LEN: usize = 3;
-const PROVE_LIFT_INPUT_LEN: usize = 3;
-const COMPRESS_INPUT_LEN: usize = 3;
-const GROTH16_INPUT_LEN: usize = 2;
-const PLONK_INPUT_LEN: usize = 2;
-
 pub struct Sp1Agent {
     pub prover: Arc<SP1Prover<ClusterProverComponents>>,
     pub prover_opts: SP1ProverOpts,

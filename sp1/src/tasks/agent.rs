@@ -1,11 +1,11 @@
-use crate::tasks::{
-    Agent, Sp1Agent, COMPRESS_INPUT_LEN, GROTH16_INPUT_LEN, PLONK_INPUT_LEN,
-    PROVE_INPUT_LEN, PROVE_LIFT_INPUT_LEN,
-};
-use anyhow::{bail, Context};
+use crate::tasks::{Agent, Sp1Agent};
+use anyhow::Context;
 use cfg_if::cfg_if;
-use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
-use common::serialization::mpk::deserialize_from_msgpack_bytes;
+use common::serialization::bincode::{
+    deserialize_from_bincode_bytes, serialize_to_bincode_bytes, Bincode,
+};
+use common::serialization::mpk::Msgpack;
+use common::serialization::{parse_single_input, FromInputBytes};
 use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
@@ -64,14 +64,10 @@ impl Agent for Sp1Agent {
 
     fn setup(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         let start_time = Instant::now();
-
         info!("Agent::setup()");
-        if input.is_empty() {
-            bail!("setup input is empty");
-        }
 
-        let elf_path: String =
-            deserialize_from_msgpack_bytes(&input).context("Failed to deserialize ELF path")?;
+        let Msgpack(elf_path): Msgpack<String> =
+            parse_single_input(&input).context("Failed to parse input")?;
 
         let elf_bytes = fs::read(&elf_path)
             .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
@@ -87,22 +83,10 @@ impl Agent for Sp1Agent {
         info!("Agent::prove()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("prove input is empty");
-        }
-        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
-            .context("Failed to parse input as Vec<Vec<u8>>")?;
-        let inputs_len = inputs.len();
-        if inputs_len != PROVE_INPUT_LEN {
-            bail!("Expected {PROVE_INPUT_LEN} inputs for prove, got {inputs_len}");
-        }
-
-        let record_path: String = deserialize_from_msgpack_bytes(&inputs[0])
-            .context("Failed to deserialize record path")?;
-        let elf_path: String =
-            deserialize_from_msgpack_bytes(&inputs[1]).context("Failed to deserialize ELF path")?;
-        let vk: StarkVerifyingKey<CoreSC> =
-            deserialize_from_bincode_bytes(&inputs[2]).context("Failed to deserialize vk")?;
+        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): (
+            Msgpack<String>,
+            (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>),
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let record_bytes = fs::read(&record_path)
             .with_context(|| format!("Failed to read record file at {}", record_path))?;
@@ -158,24 +142,14 @@ impl Agent for Sp1Agent {
         info!("Agent::prove_lift()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("prove input is empty");
-        }
-        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
-            .context("Failed to parse input as Vec<Vec<u8>>")?;
-        let inputs_len = inputs.len();
-        if inputs_len != PROVE_LIFT_INPUT_LEN {
-            bail!("Expected {PROVE_LIFT_INPUT_LEN} inputs for prove_lift, got {inputs_len}");
-        }
-
-        let vk = deserialize_from_bincode_bytes::<StarkVerifyingKey<CoreSC>>(&inputs[2])
-            .context("Failed to deserialize vk")?;
-
         // Step 1: Load & process record
-        let record_path = deserialize_from_msgpack_bytes::<String>(&inputs[0])
-            .context("Failed to deserialize record path")?;
-        let bytes = fs::read(&record_path).context("Failed to read record file")?;
-        let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&bytes)
+        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): (
+            Msgpack<String>,
+            (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>),
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+
+        let record = fs::read(&record_path).context("Failed to read record file")?;
+        let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&record)
             .context("Failed to bincode deserialize record")?;
 
         self.prover.core_prover.machine().generate_dependencies(
@@ -192,8 +166,6 @@ impl Agent for Sp1Agent {
         let traces = self.prover.core_prover.generate_traces(&record);
 
         // Step 2: Load ELF & generate PK, challenger
-        let elf_path = deserialize_from_msgpack_bytes::<String>(&inputs[1])
-            .context("Failed to deserialize ELF path")?;
         let elf_bytes = fs::read(&elf_path).context("Failed to read ELF file")?;
         let program = self
             .prover
@@ -304,22 +276,10 @@ impl Agent for Sp1Agent {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("compress input is empty");
-        }
-        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
-            .context("Failed to parse input as Vec<Vec<u8>>")?;
-        let inputs_len = inputs.len();
-        if inputs_len != COMPRESS_INPUT_LEN {
-            bail!("Expected exactly {COMPRESS_INPUT_LEN} inputs for compress, got {inputs_len}");
-        }
-
-        let left: SP1ReduceProof<InnerSC> = deserialize_from_bincode_bytes(&inputs[0])
-            .context("Failed to deserialize left receipt")?;
-        let right: SP1ReduceProof<InnerSC> = deserialize_from_bincode_bytes(&inputs[1])
-            .context("Failed to deserialize right receipt")?;
-        let is_complete: bool = deserialize_from_msgpack_bytes(&inputs[2])
-            .context("Failed to deserialize is_complete")?;
+        let (Bincode(left), (Bincode(right), Msgpack(is_complete))): (
+            Bincode<SP1ReduceProof<InnerSC>>,
+            (Bincode<SP1ReduceProof<InnerSC>>, Msgpack<bool>),
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         // Step 1: Prepare witness and program
         let compress_input = SP1CompressWitnessValues {
@@ -397,12 +357,8 @@ impl Agent for Sp1Agent {
         info!("Agent::shrink()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("shrink input is empty");
-        }
-
-        let reduce_proof: SP1ReduceProof<InnerSC> =
-            deserialize_from_bincode_bytes(&input).context("Failed to deserialize reduce proof")?;
+        let Bincode(reduce_proof): Bincode<SP1ReduceProof<InnerSC>> =
+            parse_single_input(&input).context("Failed to parse input")?;
 
         let shrink_proof = self
             .prover
@@ -420,12 +376,8 @@ impl Agent for Sp1Agent {
         info!("Agent::wrap()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("wrap input is empty");
-        }
-
-        let shrink_proof: SP1ReduceProof<InnerSC> =
-            deserialize_from_bincode_bytes(&input).context("Failed to deserialize shrink proof")?;
+        let Bincode(shrink_proof): Bincode<SP1ReduceProof<InnerSC>> =
+            parse_single_input(&input).context("Failed to parse input")?;
 
         let wrap_proof = self
             .prover
@@ -442,24 +394,15 @@ impl Agent for Sp1Agent {
         info!("Agent::groth16()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("groth16 input is empty");
-        }
-        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
-            .context("Failed to parse input as Vec<Vec<u8>> in groth16")?;
-        let inputs_len = inputs.len();
-        if inputs_len != GROTH16_INPUT_LEN {
-            bail!("Expected {GROTH16_INPUT_LEN} inputs for groth16, got {inputs_len}");
-        }
+        let (Msgpack(public_values_path), Bincode(wrap_proof)): (
+            Msgpack<String>,
+            Bincode<SP1ReduceProof<OuterSC>>,
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
-        let public_values_path: String = deserialize_from_msgpack_bytes(&inputs[0])
-            .context("Failed to deserialize record path")?;
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
         let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
             .context("Failed to deserialize public values")?;
-        let wrap_proof: SP1ReduceProof<OuterSC> = deserialize_from_bincode_bytes(&inputs[1])
-            .context("Failed to deserialize wrap proof")?;
 
         let groth16_bn254_artifacts = if sp1_prover::build::sp1_dev_mode() {
             sp1_prover::build::try_build_groth16_bn254_artifacts_dev(
@@ -492,24 +435,15 @@ impl Agent for Sp1Agent {
         info!("Agent::plonk()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("plonk input is empty");
-        }
-        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
-            .context("Failed to parse input as Vec<Vec<u8>> in plonk")?;
-        let inputs_len = inputs.len();
-        if inputs_len != PLONK_INPUT_LEN {
-            bail!("Expected {PLONK_INPUT_LEN} inputs for plonk, got {inputs_len}");
-        }
+        let (Msgpack(public_values_path), Bincode(wrap_proof)): (
+            Msgpack<String>,
+            Bincode<SP1ReduceProof<OuterSC>>,
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
-        let public_values_path: String = deserialize_from_msgpack_bytes(&inputs[0])
-            .context("Failed to deserialize record path")?;
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
         let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
             .context("Failed to deserialize public values")?;
-        let wrap_proof: SP1ReduceProof<OuterSC> = deserialize_from_bincode_bytes(&inputs[1])
-            .context("Failed to deserialize wrap proof")?;
 
         let plonk_bn254_artifacts = if sp1_prover::build::sp1_dev_mode() {
             sp1_prover::build::try_build_plonk_bn254_artifacts_dev(
@@ -540,22 +474,11 @@ impl Agent for Sp1Agent {
 
     fn wrap_compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         info!("Agent::wrap_compress()");
-        if input.is_empty() {
-            bail!("wrap_compress input is empty");
-        }
 
-        let inputs: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(&input)
-            .context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != 2 {
-            bail!("Expected 2 inputs for wrap_compress, got {}", inputs.len());
-        }
-
-        let public_values_path: String = deserialize_from_msgpack_bytes(&inputs[0])
-            .context("Failed to deserialize record path")?;
-
-        let compress_proof: SP1ReduceProof<InnerSC> = deserialize_from_bincode_bytes(&inputs[1])
-            .context("Failed to deserialize compress proof")?;
+        let (Msgpack(public_values_path), Bincode(compress_proof)): (
+            Msgpack<String>,
+            Bincode<SP1ReduceProof<InnerSC>>,
+        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
