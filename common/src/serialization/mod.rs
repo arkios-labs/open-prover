@@ -80,9 +80,84 @@ pub fn send<W: Write, T: serde::Serialize>(
     Ok(())
 }
 
+/// Trait for deserializing a single value from raw bytes.
+pub trait FromBytes: Sized {
+    fn from_bytes(input: &[u8]) -> anyhow::Result<Self>;
+}
+
+/// Trait for constructing structured data from `Vec<Vec<u8>>`,
+/// typically deserialized from a Msgpack payload.
+pub trait FromVecBytes: Sized {
+    fn from_vec_bytes(inputs: &[Vec<u8>]) -> anyhow::Result<Self>;
+}
+
+impl FromVecBytes for () {
+    fn from_vec_bytes(_: &[Vec<u8>]) -> anyhow::Result<Self> {
+        Ok(())
+    }
+}
+
+impl<Head, Tail> FromVecBytes for (Head, Tail)
+where
+    Head: FromBytes,
+    Tail: FromVecBytes,
+{
+    fn from_vec_bytes(inputs: &[Vec<u8>]) -> anyhow::Result<Self> {
+        if inputs.is_empty() {
+            bail!("Not enough inputs");
+        }
+        let head = Head::from_bytes(&inputs[0]).context("Failed to deserialize head")?;
+        let tail = Tail::from_vec_bytes(&inputs[1..]).context("Failed to deserialize tail")?;
+        Ok((head, tail))
+    }
+}
+
+/// Entrypoint for parsing Msgpack-encoded `Vec<Vec<u8>>` into structured types.
+pub trait FromInputBytes: Sized {
+    fn from_input_bytes(input: &[u8]) -> anyhow::Result<Self>;
+}
+
+impl<T> FromInputBytes for T
+where
+    T: FromVecBytes,
+{
+    fn from_input_bytes(input: &[u8]) -> anyhow::Result<Self> {
+        if input.is_empty() {
+            bail!("input is empty");
+        }
+
+        let chunks: Vec<Vec<u8>> = deserialize_from_msgpack_bytes(input)
+            .context("Failed to parse input as Vec<Vec<u8>>")?;
+
+        T::from_vec_bytes(&chunks)
+    }
+}
+
+/// For types that can be deserialized from a single binary blob
+/// using a specific serialization format.
+pub trait FormatDeserialize: Sized {
+    fn deserialize(input: &[u8]) -> anyhow::Result<Self>;
+}
+
+/// Parses a single binary payload using a format-aware wrapper type (e.g., Msgpack<T>, Bincode<T>).
+///
+/// Use this when the input is a single serialized value.
+pub fn parse_single_input<T>(input: &[u8]) -> anyhow::Result<T>
+where
+    T: FormatDeserialize,
+{
+    if input.is_empty() {
+        bail!("input is empty");
+    }
+
+    T::deserialize(input).context("Failed to deserialize input")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::serialization::bincode::Bincode;
+    use crate::serialization::mpk::Msgpack;
     use serde::{Deserialize, Serialize};
     use std::io::Cursor;
 
@@ -133,5 +208,132 @@ mod tests {
         let mut buffer = Cursor::new(vec![0xFF; 20]); // invalid size header
         let result: anyhow::Result<TestData> = recv(&mut buffer, Format::Msgpack);
         assert!(result.is_err());
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+    struct SerializationTestData {
+        id: u32,
+        name: String,
+    }
+
+    #[test]
+    fn test_parse_input_msgpack_and_bincode() {
+        let data = SerializationTestData {
+            id: 7,
+            name: "sp1".to_string(),
+        };
+
+        let msgpack_bytes = serialize_to_msgpack_bytes(&data).unwrap();
+        let Msgpack(parsed): Msgpack<SerializationTestData> =
+            parse_single_input(&msgpack_bytes).unwrap();
+        assert_eq!(parsed, data);
+
+        let bincode_bytes = serialize_to_bincode_bytes(&data).unwrap();
+        let Bincode(parsed): Bincode<SerializationTestData> =
+            parse_single_input(&bincode_bytes).unwrap();
+        assert_eq!(parsed, data);
+    }
+
+    #[test]
+    fn test_from_vec_bytes_single() {
+        let val = SerializationTestData {
+            id: 1,
+            name: "msgpack".into(),
+        };
+
+        let msgpack_bytes = serialize_to_msgpack_bytes(&val).unwrap();
+        let wrapper =
+            Msgpack::<SerializationTestData>::from_vec_bytes(&[msgpack_bytes.clone()]).unwrap();
+        assert_eq!(wrapper.0, val);
+
+        let bincode_bytes = serialize_to_bincode_bytes(&val).unwrap();
+        let wrapper =
+            Bincode::<SerializationTestData>::from_vec_bytes(&[bincode_bytes.clone()]).unwrap();
+        assert_eq!(wrapper.0, val);
+    }
+
+    #[test]
+    fn test_from_vec_bytes_tuple() {
+        let val1 = SerializationTestData {
+            id: 11,
+            name: "a".into(),
+        };
+        let val2 = SerializationTestData {
+            id: 22,
+            name: "b".into(),
+        };
+
+        let a = serialize_to_msgpack_bytes(&val1).unwrap();
+        let b = serialize_to_bincode_bytes(&val2).unwrap();
+        let input = vec![a, b];
+
+        let (Msgpack(v1), Bincode(v2)): (
+            Msgpack<SerializationTestData>,
+            Bincode<SerializationTestData>,
+        ) = FromVecBytes::from_vec_bytes(&input).unwrap();
+
+        assert_eq!(v1, val1);
+        assert_eq!(v2, val2);
+    }
+
+    #[test]
+    fn test_from_input_bytes_nested_tuple() {
+        let val1 = SerializationTestData {
+            id: 100,
+            name: "left".into(),
+        };
+        let val2 = SerializationTestData {
+            id: 200,
+            name: "right".into(),
+        };
+        let flag = true;
+
+        let chunk1 = serialize_to_bincode_bytes(&val1).unwrap();
+        let chunk2 = serialize_to_bincode_bytes(&val2).unwrap();
+        let chunk3 = serialize_to_msgpack_bytes(&flag).unwrap();
+
+        let input_chunks = vec![chunk1, chunk2, chunk3];
+        let packed_input = serialize_to_msgpack_bytes(&input_chunks).unwrap();
+
+        let (Bincode(left), (Bincode(right), Msgpack(is_set))): (
+            Bincode<SerializationTestData>,
+            (Bincode<SerializationTestData>, Msgpack<bool>),
+        ) = FromInputBytes::from_input_bytes(&packed_input).unwrap();
+
+        assert_eq!(left, val1);
+        assert_eq!(right, val2);
+        assert!(is_set);
+    }
+
+    #[test]
+    fn test_from_structured_input_invalid_format() {
+        let not_nested_vec = serialize_to_msgpack_bytes(&"not nested array").unwrap();
+
+        let result: anyhow::Result<(
+            Msgpack<SerializationTestData>,
+            Bincode<SerializationTestData>,
+        )> = FromInputBytes::from_input_bytes(&not_nested_vec);
+
+        assert!(result.is_err());
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Failed to parse input as Vec<Vec<u8>>"));
+    }
+
+    #[test]
+    fn test_from_vec_bytes_empty_input() {
+        let result: anyhow::Result<(
+            Msgpack<SerializationTestData>,
+            Bincode<SerializationTestData>,
+        )> = FromVecBytes::from_vec_bytes(&[]);
+        assert!(result.is_err());
+        assert!(format!("{:?}", result.unwrap_err()).contains("Not enough inputs"));
+    }
+
+    #[test]
+    fn test_empty_input_returns_error() {
+        let result: anyhow::Result<Msgpack<SerializationTestData>> = parse_single_input(&[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("input is empty"));
     }
 }
