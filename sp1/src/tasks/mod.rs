@@ -22,8 +22,7 @@ pub trait Agent: Send + Sync {
     fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn prove_lift(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn compress(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    fn shrink(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    fn wrap(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn shrink_wrap(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn groth16(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn plonk(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn wrap_compress(&self, input: Vec<u8>) -> Result<Vec<u8>>;
