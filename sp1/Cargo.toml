@@ -5,19 +5,19 @@ edition = "2024"
 
 [dependencies]
 # sp1
-sp1-core-executor = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev" }
-sp1-core-machine = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev", features = ["bigint-rug"] }
-sp1-prover = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev" }
-sp1-recursion-circuit = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev" }
-sp1-recursion-compiler = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev" }
-sp1-recursion-core = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev" }
-sp1-recursion-gnark-ffi = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev", features = ["native"] }
-sp1-sdk = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev" }
-sp1-stark = { git = "https://github.com/succinctlabs/sp1.git", branch = "dev" }
+sp1-core-executor = { version = "5.2.1" }
+sp1-core-machine = { version = "5.2.1", features = ["bigint-rug"] }
+sp1-prover = { version = "5.2.1" }
+sp1-recursion-circuit = { version = "5.2.1" }
+sp1-recursion-compiler = { version = "5.2.1" }
+sp1-recursion-core = { version = "5.2.1" }
+sp1-recursion-gnark-ffi = { version = "5.2.1", features = ["native"] }
+sp1-sdk = { version = "5.2.1" }
+sp1-stark = { version = "5.2.1" }
 
 # moongate
-moongate-prover = { git = "https://github.com/succinctlabs/moongate", branch = "cluster" }
-moongate-core = { git = "https://github.com/succinctlabs/moongate", branch = "cluster" }
+moongate-prover = { git = "https://github.com/succinctlabs/moongate", rev = "ef5b821ccd0bfc723d952506faf66dd5b4ca2e45", optional = true }
+moongate-core = { git = "https://github.com/succinctlabs/moongate", rev = "ef5b821ccd0bfc723d952506faf66dd5b4ca2e45", optional = true }
 
 # p3
 p3-field = { version = "=0.2.3-succinct" }
@@ -35,7 +35,10 @@ cfg-if = "1.0.1"
 serde_bytes = "0.11.17"
 
 [features]
-gpu = ["sp1-sdk/cuda"]
+default = []
+# Enable GPU support by including moongate-core and moongate-prover dependencies
+# https://github.com/succinctlabs/cluster/blob/bf1c2b2/crates/worker/Cargo.toml#L12
+gpu = ["dep:moongate-core", "dep:moongate-prover"]
 
 [[bin]]
 name = "sp1"
