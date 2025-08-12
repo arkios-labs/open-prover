@@ -116,14 +116,14 @@ mod tests {
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
         let compressed_proof_path =
-            metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin");
+            metadata_dir.join("proof/fibonacci-elf_shard_size_14_raw_compressed_proof.bin");
         let compressed_proof =
             fs::read(&compressed_proof_path).context("Failed to read compressed proof")?;
 
         let inputs: Vec<Vec<u8>> = vec![pv_path_packed, compressed_proof];
         let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
 
-        let wrapped_compress_proof = cpu_agent.wrap_compress(inputs_packed)?;
+        let _wrapped_compress_proof = cpu_agent.wrap_compress(inputs_packed)?;
 
         Ok(())
     }
