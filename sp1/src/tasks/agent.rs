@@ -270,7 +270,7 @@ impl Agent for Sp1Agent {
             serialize_to_bincode_bytes(&recursion_proof).context("Failed to serialize")?;
 
         let elapsed = start_time.elapsed();
-        info!("CpuAgent::prove_lift() took {:?}", elapsed);
+        info!("Agent::prove_lift() took {:?}", elapsed);
 
         Ok(serialized)
     }
