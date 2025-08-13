@@ -15,7 +15,7 @@ use tempfile::tempdir;
 use tracing::info;
 
 pub struct RiscZeroAgent {
-    pub prover: Option<Rc<dyn ProverServer>>,
+    pub prover: Rc<dyn ProverServer>,
     pub verifier_ctx: VerifierContext,
 }
 
@@ -27,7 +27,7 @@ impl RiscZeroAgent {
         let prover = get_prover_server(&opts).context("Failed to initialize prover server")?;
 
         Ok(Self {
-            prover: Some(prover),
+            prover,
             verifier_ctx,
         })
     }
@@ -43,16 +43,12 @@ impl Agent for RiscZeroAgent {
 
         let segment_receipt = self
             .prover
-            .as_ref()
-            .context("Missing prover")?
             .prove_segment(&self.verifier_ctx, &segment)
             .context("Failed to prove segment")?;
 
         info!("segment_receipt: {:?}", &segment_receipt);
         let lift_receipt = self
             .prover
-            .as_ref()
-            .context("Missing prover")?
             .lift(&segment_receipt)
             .with_context(|| "Failed to lift".to_string())?;
 
@@ -83,11 +79,7 @@ impl Agent for RiscZeroAgent {
         let right_receipt =
             deserialize_obj(&receipts[1]).context("Failed to deserialize right receipt")?;
 
-        let joined = self
-            .prover
-            .as_ref()
-            .context("Missing prover from join task")?
-            .join(&left_receipt, &right_receipt)?;
+        let joined = self.prover.join(&left_receipt, &right_receipt)?;
 
         let serialized = serialize_obj(&joined).expect("Failed to serialize");
 
@@ -107,11 +99,7 @@ impl Agent for RiscZeroAgent {
         // Conversion is required because the library's `ProveKeccakRequest` type doesn't support deserialization
         let prove_keccak_request = convert(prove_keccak_request_local);
 
-        let keccak_receipt = self
-            .prover
-            .as_ref()
-            .context("Mssing prover from keccak task")?
-            .prove_keccak(&prove_keccak_request);
+        let keccak_receipt = self.prover.prove_keccak(&prove_keccak_request);
 
         let serialized = serialize_obj(&keccak_receipt?).expect("Failed to serialize");
         Ok(serialized)
@@ -141,8 +129,6 @@ impl Agent for RiscZeroAgent {
 
         let unioned = self
             .prover
-            .as_ref()
-            .context("Missing prover from union task")?
             .union(&left_receipt, &right_receipt)
             .context("Failed to union on left/right receipt")?
             .into_unknown();
@@ -210,8 +196,6 @@ impl Agent for RiscZeroAgent {
 
                         root = self
                             .prover
-                            .as_ref()
-                            .context("Missing prover from resolve task")?
                             .resolve(&root, &union_receipt)
                             .context("Failed to resolve union receipt")?;
                     }
@@ -231,8 +215,6 @@ impl Agent for RiscZeroAgent {
 
                         root = self
                             .prover
-                            .as_ref()
-                            .context("Missing prover from resolve task")?
                             .resolve(&root, assumption_receipt)
                             .context("Failed to resolve assumption receipt")?;
                     }
@@ -328,8 +310,6 @@ impl Agent for RiscZeroAgent {
         // (Ref: https://github.com/risc0/risc0/blob/b5b16f6/bento/crates/workflow/src/tasks/snark.rs#L29-L34)
         let snark_receipt = self
             .prover
-            .as_ref()
-            .context("Missing prover from get_snark_receipt task")?
             .compress(&opts, &stark_receipt)
             .context("Failed to compress stark receipt")?;
 
