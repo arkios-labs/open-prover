@@ -4,8 +4,7 @@ use hex::FromHex;
 use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
-    get_prover_server, seal_to_json, Assumption, AssumptionReceipt, Digest,
-    Groth16ProofJson, Groth16Receipt, Groth16ReceiptVerifierParameters, Groth16Seal, InnerReceipt, ProverOpts,
+    get_prover_server, seal_to_json, Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts,
     ProverServer, Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext,
 };
 use std::collections::HashMap;
@@ -325,36 +324,18 @@ impl Agent for RiscZeroAgent {
             bail!("get_snark_receipt input is empty");
         }
 
-        let inputs: Vec<Vec<u8>> =
-            serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != 2 {
-            bail!(
-                "Expected exactly two inputs for snark, got {}",
-                inputs.len()
-            );
-        }
-
         let stark_receipt: Receipt =
-            deserialize_obj(&inputs[0]).context("Failed to parse stark_receipt")?;
+            deserialize_obj(&input).context("Failed to parse stark_receipt")?;
 
-        let proof_json: Groth16ProofJson =
-            deserialize_obj(&inputs[1]).context("Failed to parse input JSON")?;
-
-        let seal: Groth16Seal = proof_json
-            .try_into()
-            .context("Failed to convert proof JSON to Groth16Seal")?;
-
-        let snark_receipt = Groth16Receipt::new(
-            seal.to_vec(),
-            stark_receipt.claim()?,
-            Groth16ReceiptVerifierParameters::default().digest(),
-        );
-
-        let snark_receipt = Receipt::new(
-            InnerReceipt::Groth16(snark_receipt),
-            stark_receipt.journal.bytes,
-        );
+        let opts = ProverOpts::groth16();
+        // Implemented based on newly introduced logic in Bento.
+        // (Ref: https://github.com/risc0/risc0/blob/b5b16f6/bento/crates/workflow/src/tasks/snark.rs#L29-L34)
+        let snark_receipt = self
+            .prover
+            .as_ref()
+            .context("Missing prover from get_snark_receipt task")?
+            .compress(&opts, &stark_receipt)
+            .context("Failed to compress stark receipt")?;
 
         let serialized =
             serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;
