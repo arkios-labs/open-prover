@@ -369,31 +369,21 @@ impl Agent for RiscZeroAgent {
 }
 #[cfg(test)]
 mod tests {
-    use crate::tasks::factory::get_agent;
     use crate::tasks::{
-        deserialize_obj, serialize_obj, Agent, FinalizeInput, ProveKeccakRequestLocal,
-        ResolveInput, SerializableSession,
+        deserialize_obj, serialize_obj, setup_agent_and_metadata_dir, Agent, FinalizeInput,
+        ProveKeccakRequestLocal, ResolveInput, SerializableSession,
     };
     use anyhow::Context;
     use anyhow::{anyhow, Result};
-    use common::io::input::env::EnvProvider;
     use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
-    use std::{collections::VecDeque, env, fs, path::PathBuf, time::Instant};
+    use std::{collections::VecDeque, fs, time::Instant};
     use tracing::info;
 
     #[test]
     fn test_keccak_on_pending_keccaks() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+        let path = metadata_dir.join("session/session_4_segments.json");
         info!("Loading session from: {:?}", path);
 
         let json = fs::read_to_string(&path)?;
@@ -426,7 +416,7 @@ mod tests {
             let bytes = serialize_obj(&local_req)?;
             info!("Proving keccak [{} / {}]...", i + 1, keccak_count);
 
-            let result = agent_ref.keccak(bytes)?;
+            let result = agent.keccak(bytes)?;
             assert!(
                 !result.is_empty(),
                 "Keccak result should not be empty for request {}",
@@ -451,7 +441,7 @@ mod tests {
             "Number of receipts should match keccak count"
         );
 
-        let file_path = PathBuf::from("metadata/keccak/keccak_receipts.json");
+        let file_path = metadata_dir.join("keccak/keccak_receipts.json");
         let receipts_json = serde_json::to_string_pretty(&all_receipts)?;
 
         info!(
@@ -466,17 +456,9 @@ mod tests {
 
     #[test]
     fn test_union_on_keccaks_tree() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/keccak/keccak_receipts.json");
+        let path = metadata_dir.join("keccak/keccak_receipts.json");
         info!("Loading keccak receipts from: {:?}", path);
 
         let json = fs::read_to_string(&path)?;
@@ -507,7 +489,7 @@ mod tests {
                     serde_json::to_vec(&vec![left_serialized.clone(), right_serialized.clone()])
                         .expect("Failed to serialize union input");
 
-                let union = agent_ref.union(input).expect("Union failed");
+                let union = agent.union(input).expect("Union failed");
                 assert!(!union.is_empty(), "Union result should not be empty");
 
                 let mut new_branch = left;
@@ -552,17 +534,9 @@ mod tests {
 
     #[test]
     fn test_prove_all_segments() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+        let path = metadata_dir.join("session/session_4_segments.json");
         info!("Loading session from: {:?}", path);
 
         let json = fs::read_to_string(&path)?;
@@ -580,7 +554,7 @@ mod tests {
         for (i, segment) in session.segments.iter().enumerate() {
             info!("Proving segment [{}/{}]", i + 1, segment_count);
             let bytes = serialize_obj(segment)?;
-            let lifted_bytes = agent_ref.prove(bytes)?;
+            let lifted_bytes = agent.prove(bytes)?;
 
             assert!(
                 !lifted_bytes.is_empty(),
@@ -618,17 +592,9 @@ mod tests {
 
     #[test]
     fn test_join_on_lifted_receipts() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/lifted_receipts.json");
+        let path = metadata_dir.join("lifted_receipts.json");
         info!("Loading lifted receipts from: {:?}", path);
         let json = fs::read_to_string(&path)?;
 
@@ -653,7 +619,7 @@ mod tests {
             let join_input = serde_json::to_vec(&vec![left.clone(), right.clone()])
                 .expect("Failed to serialize join input");
 
-            let joined = agent_ref.join(join_input).expect("Join failed");
+            let joined = agent.join(join_input).expect("Join failed");
             assert!(!joined.is_empty(), "Joined result should not be empty");
             assert!(
                 joined.len() > left.len() || joined.len() > right.len(),
@@ -698,22 +664,14 @@ mod tests {
 
     #[test]
     fn test_resolve_on_session() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+        let session_path = metadata_dir.join("session/session_4_segments.json");
         info!("Loading session from: {:?}", session_path);
         let session_json = fs::read_to_string(&session_path)?;
         let session: SerializableSession = serde_json::from_str(&session_json)?;
 
-        let root_path = env::current_dir()?.join("metadata/root_receipt.json");
+        let root_path = metadata_dir.join("root_receipt.json");
         info!("Loading root receipt from: {:?}", root_path);
         let root_json = fs::read_to_string(&root_path)?;
         let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
@@ -724,7 +682,7 @@ mod tests {
 
         info!("Loaded root receipt");
 
-        let union_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
+        let union_path = metadata_dir.join("keccak/unioned_receipt.json");
         info!("Loading unioned receipt from: {:?}", union_path);
         let union_json = fs::read_to_string(&union_path)?;
         let union_receipt: SuccinctReceipt<Unknown> = serde_json::from_str(&union_json)?;
@@ -742,7 +700,7 @@ mod tests {
 
         info!("Calling resolve()...");
         let start_resolve = Instant::now();
-        let resolved = agent_ref.resolve(input_bytes)?;
+        let resolved = agent.resolve(input_bytes)?;
         assert!(!resolved.is_empty(), "Resolved result should not be empty");
 
         info!("Resolve completed in {:?}", start_resolve.elapsed());
@@ -762,18 +720,9 @@ mod tests {
 
     #[test]
     fn test_finalize_on_session() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let root_path = env::current_dir()?.join("metadata/resolved_receipt.json");
+        let root_path = metadata_dir.join("resolved_receipt.json");
         info!("Loading resolved receipt from: {:?}", root_path);
         let root_json = fs::read_to_string(&root_path)?;
         let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
@@ -784,7 +733,7 @@ mod tests {
 
         info!("Resolved receipt loaded");
 
-        let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+        let session_path = metadata_dir.join("session/session_4_segments.json");
         info!("Loading session from: {:?}", session_path);
         let session_json = fs::read_to_string(&session_path)?;
         let session: SerializableSession = serde_json::from_str(&session_json)?;
@@ -810,7 +759,7 @@ mod tests {
         info!("Finalize input serialized");
 
         let stark_finalize = Instant::now();
-        let stark_receipt = agent_ref.finalize(input_bytes)?;
+        let stark_receipt = agent.finalize(input_bytes)?;
         assert!(
             !stark_receipt.is_empty(),
             "Stark receipt should not be empty"
@@ -833,18 +782,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_stark2snark() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let stark_path = env::current_dir()?.join("metadata/result/finalized_receipt.json");
+        let stark_path = metadata_dir.join("result/finalized_receipt.json");
         info!("Loading stark receipt from: {:?}", stark_path);
 
         let stark_receipt_bytes = fs::read(&stark_path)?;
@@ -853,7 +793,7 @@ mod tests {
             "Stark receipt bytes should not be empty"
         );
 
-        let groth16_receipt = agent_ref
+        let groth16_receipt = agent
             .get_snark_receipt(stark_receipt_bytes)
             .expect("stark2snark conversion failed: could not convert stark receipt to snark");
 
@@ -875,18 +815,9 @@ mod tests {
 
     #[test]
     fn test_prepare_snark() -> Result<()> {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let stark_path = env::current_dir()?.join("metadata/result/finalized_receipt.json");
+        let stark_path = metadata_dir.join("result/finalized_receipt.json");
         info!("Loading STARK receipt from: {:?}", stark_path);
 
         let stark_json = fs::read_to_string(&stark_path)?;
@@ -910,7 +841,7 @@ mod tests {
         );
 
         let start_prepare = Instant::now();
-        let prepare_result = agent_ref.prepare_snark(stark_receipt_bytes)?;
+        let prepare_result = agent.prepare_snark(stark_receipt_bytes)?;
         assert!(
             !prepare_result.is_empty(),
             "prepare_snark result should not be empty"

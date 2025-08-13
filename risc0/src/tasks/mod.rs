@@ -1,13 +1,14 @@
-pub mod factory;
 pub mod r0;
 
-use anyhow::Result;
+use crate::tasks::r0::RiscZeroAgent;
+use anyhow::{Context, Result};
 use risc0_zkvm::{
     Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, ReceiptClaim, Segment,
     SuccinctReceipt, Unknown,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 pub type KeccakState = [u64; 25];
 
@@ -93,4 +94,16 @@ fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
         control_root: Digest::from(local.control_root),
         input: local.input,
     }
+}
+
+pub fn setup_agent_and_metadata_dir() -> anyhow::Result<(PathBuf, RiscZeroAgent)> {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
+
+    let metadata_dir = PathBuf::from("metadata");
+
+    let agent = RiscZeroAgent::new().context("Failed to create agent")?;
+
+    Ok((metadata_dir, agent))
 }

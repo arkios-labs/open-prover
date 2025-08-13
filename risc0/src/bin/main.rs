@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
-use common::io::input::env::EnvProvider;
 use risc0::command::registry::Command;
-use risc0::tasks::factory::get_agent;
-use risc0::tasks::Agent;
+use risc0::tasks::r0::RiscZeroAgent;
 use std::io::{Read, Write};
 use std::{env, io};
 use tracing::info;
@@ -14,27 +12,21 @@ async fn main() -> Result<()> {
         .with_writer(io::stderr)
         .init();
 
-    let agent_type =
-        env::var("AGENT_TYPE").map_err(|_| anyhow::anyhow!("Missing AGENT_TYPE env var"))?;
-
     let task_type: Command = env::var("TASK_TYPE")
         .context("Missing TASK_TYPE")?
         .parse()?;
 
-    info!(
-        "Running AGENT_TYPE={agent_type} with TASK_TYPE={:?}",
-        task_type
-    );
+    info!("Running with TASK_TYPE={:?}", task_type);
 
-    let agent_provider = Box::new(EnvProvider { key: agent_type });
-    let agent = get_agent(agent_provider)?;
-    let agent_ref: &dyn Agent = agent.as_ref();
+    let agent = RiscZeroAgent::new().context("Failed to create agent")?;
 
     let mut stdin = io::stdin();
     let mut input_bytes = Vec::new();
     stdin.read_to_end(&mut input_bytes)?;
 
-    let result_bytes = task_type.apply(agent_ref, input_bytes).await?;
+    let result_bytes = task_type
+        .apply(&agent, input_bytes)
+        .context("Failed to apply command")?;
 
     let mut stdout = io::stdout();
     stdout.write_all(&result_bytes)?;

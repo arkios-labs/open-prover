@@ -34,7 +34,7 @@ impl FromStr for Command {
     }
 }
 impl Command {
-    pub async fn apply(self, agent: &dyn Agent, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn apply(self, agent: &impl Agent, input: Vec<u8>) -> Result<Vec<u8>> {
         match self {
             Command::Execute => agent.execute(input),
             Command::Join => agent.join(input),
