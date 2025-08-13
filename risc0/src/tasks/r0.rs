@@ -1,12 +1,12 @@
-use crate::tasks::{Agent, ProveKeccakRequestLocal, convert, deserialize_obj, serialize_obj};
-use anyhow::{Context, Result, bail};
+use crate::tasks::{convert, deserialize_obj, serialize_obj, Agent, ProveKeccakRequestLocal};
+use anyhow::{bail, Context, Result};
 use hex::FromHex;
 use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
-    Assumption, AssumptionReceipt, Digest, Groth16ProofJson, Groth16Receipt,
-    Groth16ReceiptVerifierParameters, Groth16Seal, InnerReceipt, ProverOpts, ProverServer, Receipt,
-    ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server, seal_to_json,
+    get_prover_server, seal_to_json, Assumption, AssumptionReceipt, Digest,
+    Groth16ProofJson, Groth16Receipt, Groth16ReceiptVerifierParameters, Groth16Seal, InnerReceipt, ProverOpts,
+    ProverServer, Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -27,7 +27,10 @@ impl RiscZeroAgent {
         let opts = ProverOpts::default().with_segment_po2_max(25);
         let prover = get_prover_server(&opts).context("Failed to initialize prover server")?;
 
-        Ok(Self { prover: Some(prover), verifier_ctx })
+        Ok(Self {
+            prover: Some(prover),
+            verifier_ctx,
+        })
     }
 }
 
@@ -74,7 +77,10 @@ impl Agent for RiscZeroAgent {
             serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
 
         if receipts.len() != 2 {
-            bail!("Expected exactly two receipts for join, got {}", receipts.len());
+            bail!(
+                "Expected exactly two receipts for join, got {}",
+                receipts.len()
+            );
         }
 
         let left_receipt =
@@ -127,7 +133,10 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for union")?;
 
         if receipts.len() != 2 {
-            bail!("Expected exactly two receipts for union, got {}", receipts.len());
+            bail!(
+                "Expected exactly two receipts for union, got {}",
+                receipts.len()
+            );
         }
 
         let left_receipt =
@@ -159,7 +168,10 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for resolve")?;
 
         if inputs.len() != 3 {
-            bail!("Expected exactly three inputs for resolve, got {}", inputs.len())
+            bail!(
+                "Expected exactly three inputs for resolve, got {}",
+                inputs.len()
+            )
         }
 
         let mut root: SuccinctReceipt<ReceiptClaim> =
@@ -176,7 +188,10 @@ impl Agent for RiscZeroAgent {
 
         let assumption_receipt_map: HashMap<String, SuccinctReceipt<Unknown>> = HashMap::new();
 
-        info!("Loaded {} assumption receipts", session_assumption_receipts.len());
+        info!(
+            "Loaded {} assumption receipts",
+            session_assumption_receipts.len()
+        );
 
         let mut assumptions_len: u64 = 0;
 
@@ -213,8 +228,9 @@ impl Agent for RiscZeroAgent {
                             continue;
                         }
 
-                        let assumption_receipt =
-                            assumption_receipt_map.get(&assumption_claim).with_context(|| {
+                        let assumption_receipt = assumption_receipt_map
+                            .get(&assumption_claim)
+                            .with_context(|| {
                                 format!("Corroborating receipt not found: {}", assumption_claim)
                             })?;
 
@@ -248,7 +264,10 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for finalize")?;
 
         if inputs.len() != 3 {
-            bail!("Expected exactly three inputs for finalize, got {}", inputs.len())
+            bail!(
+                "Expected exactly three inputs for finalize, got {}",
+                inputs.len()
+            )
         }
 
         let root: SuccinctReceipt<ReceiptClaim> =
@@ -260,7 +279,9 @@ impl Agent for RiscZeroAgent {
         let rollup_receipt = Receipt::new(InnerReceipt::Succinct(root), journal);
 
         let image_id = read_image_id(&*image_id)?;
-        rollup_receipt.verify(image_id).context("Receipt verification failed")?;
+        rollup_receipt
+            .verify(image_id)
+            .context("Receipt verification failed")?;
 
         serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
     }
@@ -308,7 +329,10 @@ impl Agent for RiscZeroAgent {
             serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
 
         if inputs.len() != 2 {
-            bail!("Expected exactly two inputs for snark, got {}", inputs.len());
+            bail!(
+                "Expected exactly two inputs for snark, got {}",
+                inputs.len()
+            );
         }
 
         let stark_receipt: Receipt =
@@ -317,8 +341,9 @@ impl Agent for RiscZeroAgent {
         let proof_json: Groth16ProofJson =
             deserialize_obj(&inputs[1]).context("Failed to parse input JSON")?;
 
-        let seal: Groth16Seal =
-            proof_json.try_into().context("Failed to convert proof JSON to Groth16Seal")?;
+        let seal: Groth16Seal = proof_json
+            .try_into()
+            .context("Failed to convert proof JSON to Groth16Seal")?;
 
         let snark_receipt = Groth16Receipt::new(
             seal.to_vec(),
@@ -326,13 +351,18 @@ impl Agent for RiscZeroAgent {
             Groth16ReceiptVerifierParameters::default().digest(),
         );
 
-        let snark_receipt =
-            Receipt::new(InnerReceipt::Groth16(snark_receipt), stark_receipt.journal.bytes);
+        let snark_receipt = Receipt::new(
+            InnerReceipt::Groth16(snark_receipt),
+            stark_receipt.journal.bytes,
+        );
 
         let serialized =
             serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;
 
-        info!("SNARK receipt created successfully ({} bytes)", serialized.len());
+        info!(
+            "SNARK receipt created successfully ({} bytes)",
+            serialized.len()
+        );
 
         Ok(serialized)
     }
@@ -341,11 +371,11 @@ impl Agent for RiscZeroAgent {
 mod tests {
     use crate::tasks::factory::get_agent;
     use crate::tasks::{
-        Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession,
-        deserialize_obj, serialize_obj,
+        deserialize_obj, serialize_obj, Agent, FinalizeInput, ProveKeccakRequestLocal,
+        ResolveInput, SerializableSession,
     };
     use anyhow::Context;
-    use anyhow::{Result, anyhow};
+    use anyhow::{anyhow, Result};
     use common::io::input::env::EnvProvider;
     use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
     use std::{collections::VecDeque, env, fs, path::PathBuf, time::Instant};
@@ -353,7 +383,9 @@ mod tests {
 
     #[test]
     fn test_keccak_on_pending_keccaks() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -395,12 +427,19 @@ mod tests {
             info!("Proving keccak [{} / {}]...", i + 1, keccak_count);
 
             let result = agent_ref.keccak(bytes)?;
-            assert!(!result.is_empty(), "Keccak result should not be empty for request {}", i);
+            assert!(
+                !result.is_empty(),
+                "Keccak result should not be empty for request {}",
+                i
+            );
 
             let receipt: SuccinctReceipt<Unknown> =
                 deserialize_obj(&result).context("Failed to deserialize keccak receipt")?;
 
-            assert!(receipt.claim.as_value().is_ok(), "Keccak receipt should have a claim");
+            assert!(
+                receipt.claim.as_value().is_ok(),
+                "Keccak receipt should have a claim"
+            );
 
             info!("Keccak [{}] result size: {}", i, result.len());
             all_receipts.push(receipt);
@@ -417,7 +456,10 @@ mod tests {
         fs::write(&file_path, receipts_json)
             .with_context(|| format!("Failed to write receipts to {:?}", file_path))?;
 
-        assert!(fs::metadata(&file_path).is_ok(), "Keccak receipts file should be created");
+        assert!(
+            fs::metadata(&file_path).is_ok(),
+            "Keccak receipts file should be created"
+        );
 
         info!(
             "All {} keccak receipts written to {:?} in {:?}",
@@ -431,7 +473,9 @@ mod tests {
 
     #[test]
     fn test_union_on_keccaks_tree() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -492,7 +536,10 @@ mod tests {
 
         let final_branch = queue.pop().unwrap();
         let final_result = final_branch.last().unwrap();
-        assert!(!final_result.is_empty(), "Final union result should not be empty");
+        assert!(
+            !final_result.is_empty(),
+            "Final union result should not be empty"
+        );
 
         let elapsed = start.elapsed();
 
@@ -509,7 +556,10 @@ mod tests {
         let output_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
         fs::write(&output_path, union_json)?;
 
-        assert!(fs::metadata(&output_path).is_ok(), "Unioned receipt file should be created");
+        assert!(
+            fs::metadata(&output_path).is_ok(),
+            "Unioned receipt file should be created"
+        );
 
         info!("Unioned receipt written to {:?}", output_path);
 
@@ -518,7 +568,9 @@ mod tests {
 
     #[test]
     fn test_prove_all_segments() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -534,7 +586,10 @@ mod tests {
         let segment_count = session.segments.len();
         assert!(segment_count > 0, "No segments found in session");
 
-        info!("Found {} segments. Starting proof generation...", segment_count);
+        info!(
+            "Found {} segments. Starting proof generation...",
+            segment_count
+        );
         let mut all_receipts = Vec::with_capacity(segment_count);
         let start = Instant::now();
 
@@ -543,14 +598,21 @@ mod tests {
             let bytes = serialize_obj(segment)?;
             let lifted_bytes = agent_ref.prove(bytes)?;
 
-            assert!(!lifted_bytes.is_empty(), "Lifted bytes should not be empty for segment {}", i);
+            assert!(
+                !lifted_bytes.is_empty(),
+                "Lifted bytes should not be empty for segment {}",
+                i
+            );
 
             info!("Segment [{}] proof size: {}", i, lifted_bytes.len());
 
             let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
                 .context(format!("Failed to deserialize receipt for segment {}", i))?;
 
-            assert!(lifted_receipt.claim.as_value().is_ok(), "Lifted receipt should have a claim");
+            assert!(
+                lifted_receipt.claim.as_value().is_ok(),
+                "Lifted receipt should have a claim"
+            );
 
             all_receipts.push(lifted_receipt);
         }
@@ -565,7 +627,10 @@ mod tests {
         let output_json = serde_json::to_string_pretty(&all_receipts)?;
         fs::write(&output_path, output_json).context("Failed to write lifted receipts JSON")?;
 
-        assert!(fs::metadata(&output_path).is_ok(), "Lifted receipts file should be created");
+        assert!(
+            fs::metadata(&output_path).is_ok(),
+            "Lifted receipts file should be created"
+        );
 
         info!(
             "All {} segment receipts written to {:?} in {:?}",
@@ -579,7 +644,9 @@ mod tests {
 
     #[test]
     fn test_join_on_lifted_receipts() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -597,8 +664,10 @@ mod tests {
 
         info!("Loaded {} lifted receipts", receipt_count);
 
-        let serialized_receipts: Vec<Vec<u8>> =
-            lifted_receipts.into_iter().map(|r| serialize_obj(&r).unwrap()).collect();
+        let serialized_receipts: Vec<Vec<u8>> = lifted_receipts
+            .into_iter()
+            .map(|r| serialize_obj(&r).unwrap())
+            .collect();
 
         let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
         let start = Instant::now();
@@ -626,7 +695,10 @@ mod tests {
         }
 
         let final_result = queue.pop_front().unwrap();
-        assert!(!final_result.is_empty(), "Final joined result should not be empty");
+        assert!(
+            !final_result.is_empty(),
+            "Final joined result should not be empty"
+        );
 
         let elapsed = start.elapsed();
 
@@ -638,7 +710,10 @@ mod tests {
         );
 
         let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&final_result)?;
-        assert!(root_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
+        assert!(
+            root_receipt.claim.as_value().is_ok(),
+            "Root receipt should have a claim"
+        );
 
         let root_json = serde_json::to_string_pretty(&root_receipt)?;
         fs::write("metadata/root_receipt.json", root_json)?;
@@ -655,7 +730,9 @@ mod tests {
 
     #[test]
     fn test_resolve_on_session() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -672,7 +749,10 @@ mod tests {
         info!("Loading root receipt from: {:?}", root_path);
         let root_json = fs::read_to_string(&root_path)?;
         let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
-        assert!(root_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
+        assert!(
+            root_receipt.claim.as_value().is_ok(),
+            "Root receipt should have a claim"
+        );
 
         info!("Loaded root receipt");
 
@@ -700,7 +780,10 @@ mod tests {
         info!("Resolve completed in {:?}", start_resolve.elapsed());
 
         let resolved_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&resolved)?;
-        assert!(resolved_receipt.claim.as_value().is_ok(), "Resolved receipt should have a claim");
+        assert!(
+            resolved_receipt.claim.as_value().is_ok(),
+            "Resolved receipt should have a claim"
+        );
 
         let resolved_json = serde_json::to_string_pretty(&resolved_receipt)?;
         fs::write("metadata/resolved_receipt.json", resolved_json)?;
@@ -717,7 +800,9 @@ mod tests {
 
     #[test]
     fn test_finalize_on_session() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -730,7 +815,10 @@ mod tests {
         info!("Loading resolved receipt from: {:?}", root_path);
         let root_json = fs::read_to_string(&root_path)?;
         let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
-        assert!(root_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
+        assert!(
+            root_receipt.claim.as_value().is_ok(),
+            "Root receipt should have a claim"
+        );
 
         info!("Resolved receipt loaded");
 
@@ -761,12 +849,18 @@ mod tests {
 
         let stark_finalize = Instant::now();
         let stark_receipt = agent_ref.finalize(input_bytes)?;
-        assert!(!stark_receipt.is_empty(), "Stark receipt should not be empty");
+        assert!(
+            !stark_receipt.is_empty(),
+            "Stark receipt should not be empty"
+        );
 
         info!("Finalize succeeded in {:?}", stark_finalize.elapsed());
 
         let finalized_receipt: Receipt = deserialize_obj(&stark_receipt)?;
-        assert!(finalized_receipt.claim().is_ok(), "Finalized receipt should have a claim");
+        assert!(
+            finalized_receipt.claim().is_ok(),
+            "Finalized receipt should have a claim"
+        );
 
         let finalized_json = serde_json::to_string_pretty(&finalized_receipt)?;
         fs::write("metadata/result/finalized_receipt.json", finalized_json)?;
@@ -783,7 +877,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_stark2snark() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -796,16 +892,25 @@ mod tests {
         info!("Loading stark receipt from: {:?}", stark_path);
 
         let stark_receipt_bytes = fs::read(&stark_path)?;
-        assert!(!stark_receipt_bytes.is_empty(), "Stark receipt bytes should not be empty");
+        assert!(
+            !stark_receipt_bytes.is_empty(),
+            "Stark receipt bytes should not be empty"
+        );
 
         let groth16_receipt = agent_ref
             .get_snark_receipt(stark_receipt_bytes)
             .expect("stark2snark conversion failed: could not convert stark receipt to snark");
 
-        assert!(!groth16_receipt.is_empty(), "Groth16 receipt should not be empty");
+        assert!(
+            !groth16_receipt.is_empty(),
+            "Groth16 receipt should not be empty"
+        );
 
         let groth16_receipt: Receipt = deserialize_obj(&groth16_receipt)?;
-        assert!(groth16_receipt.claim().is_ok(), "Groth16 receipt should have a claim");
+        assert!(
+            groth16_receipt.claim().is_ok(),
+            "Groth16 receipt should have a claim"
+        );
 
         let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
         fs::write("metadata/result/groth16.json", groth16_json)?;
@@ -820,7 +925,9 @@ mod tests {
 
     #[test]
     fn test_prepare_snark() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
 
         let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
 
@@ -834,18 +941,30 @@ mod tests {
 
         let stark_json = fs::read_to_string(&stark_path)?;
         let stark_receipt: Receipt = serde_json::from_str(&stark_json)?;
-        assert!(stark_receipt.claim().is_ok(), "STARK receipt should have a claim");
+        assert!(
+            stark_receipt.claim().is_ok(),
+            "STARK receipt should have a claim"
+        );
 
         info!("STARK receipt loaded successfully");
 
         let stark_receipt_bytes = serialize_obj(&stark_receipt)?;
-        assert!(!stark_receipt_bytes.is_empty(), "STARK receipt bytes should not be empty");
+        assert!(
+            !stark_receipt_bytes.is_empty(),
+            "STARK receipt bytes should not be empty"
+        );
 
-        info!("STARK receipt serialized, size: {} bytes", stark_receipt_bytes.len());
+        info!(
+            "STARK receipt serialized, size: {} bytes",
+            stark_receipt_bytes.len()
+        );
 
         let start_prepare = Instant::now();
         let prepare_result = agent_ref.prepare_snark(stark_receipt_bytes)?;
-        assert!(!prepare_result.is_empty(), "prepare_snark result should not be empty");
+        assert!(
+            !prepare_result.is_empty(),
+            "prepare_snark result should not be empty"
+        );
 
         info!("prepare_snark completed in {:?}", start_prepare.elapsed());
 
@@ -866,7 +985,11 @@ mod tests {
         );
 
         let seal_path = prepare_json["seal_path"].as_str().unwrap();
-        assert!(fs::metadata(seal_path).is_ok(), "Seal file should exist at: {}", seal_path);
+        assert!(
+            fs::metadata(seal_path).is_ok(),
+            "Seal file should exist at: {}",
+            seal_path
+        );
 
         let seal_content = fs::read_to_string(seal_path)?;
         assert!(!seal_content.is_empty(), "Seal file should not be empty");

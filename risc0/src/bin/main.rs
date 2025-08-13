@@ -1,22 +1,30 @@
 use anyhow::{Context, Result};
 use common::io::input::env::EnvProvider;
 use risc0::command::registry::Command;
-use risc0::tasks::Agent;
 use risc0::tasks::factory::get_agent;
+use risc0::tasks::Agent;
 use std::io::{Read, Write};
 use std::{env, io};
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).with_writer(io::stderr).init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(io::stderr)
+        .init();
 
     let agent_type =
         env::var("AGENT_TYPE").map_err(|_| anyhow::anyhow!("Missing AGENT_TYPE env var"))?;
 
-    let task_type: Command = env::var("TASK_TYPE").context("Missing TASK_TYPE")?.parse()?;
+    let task_type: Command = env::var("TASK_TYPE")
+        .context("Missing TASK_TYPE")?
+        .parse()?;
 
-    info!("Running AGENT_TYPE={agent_type} with TASK_TYPE={:?}", task_type);
+    info!(
+        "Running AGENT_TYPE={agent_type} with TASK_TYPE={:?}",
+        task_type
+    );
 
     let agent_provider = Box::new(EnvProvider { key: agent_type });
     let agent = get_agent(agent_provider)?;
