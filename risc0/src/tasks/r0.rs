@@ -263,39 +263,7 @@ impl Agent for RiscZeroAgent {
         serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
     }
 
-    fn prepare_snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::prepare_snark()");
-
-        if input.is_empty() {
-            bail!("prepare_snark input is empty");
-        }
-
-        let work_dir = tempdir()?.keep();
-
-        let receipt: Receipt = deserialize_obj(&input)?;
-
-        let succinct_receipt = receipt.inner.succinct()?;
-
-        info!("start identity_p254");
-        let receipt_ident = identity_p254(succinct_receipt).context("identity predicate failed")?;
-
-        let seal_bytes = receipt_ident.get_seal_bytes();
-        info!("Running seal-to-json");
-
-        let seal_path = work_dir.join("input.json");
-        let seal_json = File::create(&seal_path)?;
-        let mut seal_reader = Cursor::new(&seal_bytes);
-        seal_to_json(&mut seal_reader, &seal_json)?;
-
-        let result_bytes = serialize_obj(&seal_path.to_string_lossy().to_string())?;
-
-        info!("Seal file created at: {:?}", seal_path);
-        info!("prepare_snark completed successfully");
-
-        Ok(result_bytes)
-    }
-
-    fn get_snark_receipt(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    fn stark2snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("RiscZeroTask::get_snark_receipt()");
 
         if input.is_empty() {
@@ -695,7 +663,7 @@ mod tests {
             serialize_obj(&stark_receipt).context("Failed to serialize")?;
 
         let snark_receipt = agent
-            .get_snark_receipt(stark_receipt_serialized)
+            .stark2snark(stark_receipt_serialized)
             .expect("stark2snark conversion failed: could not convert stark receipt to snark");
 
         info!(

@@ -10,7 +10,6 @@ pub enum Command {
     Resolve,
     Union,
     Keccak,
-    PrepareSnark,
     GetSnarkReceipt,
 }
 
@@ -25,7 +24,6 @@ impl FromStr for Command {
             "RESOLVE" => Ok(Command::Resolve),
             "UNION" => Ok(Command::Union),
             "KECCAK" => Ok(Command::Keccak),
-            "PREPARE_SNARK" => Ok(Command::PrepareSnark),
             "GET_SNARK_RECEIPT" => Ok(Command::GetSnarkReceipt),
             _ => Err(anyhow::anyhow!("Unknown command type: {}", s)),
         }
@@ -40,8 +38,7 @@ impl Command {
             Command::Resolve => agent.resolve(input),
             Command::Union => agent.union(input),
             Command::Keccak => agent.keccak(input),
-            Command::PrepareSnark => agent.prepare_snark(input),
-            Command::GetSnarkReceipt => agent.get_snark_receipt(input),
+            Command::GetSnarkReceipt => agent.stark2snark(input),
         }
     }
 }
