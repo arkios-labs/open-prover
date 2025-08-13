@@ -34,10 +34,6 @@ impl RiscZeroAgent {
 }
 
 impl Agent for RiscZeroAgent {
-    fn execute(&self, _data: Vec<u8>) -> Result<Vec<u8>> {
-        bail!("RiscZeroTask::execute is not supported in this context");
-    }
-
     fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         if input.is_empty() {
             bail!("prove input is empty");

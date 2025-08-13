@@ -4,7 +4,6 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Command {
-    Execute,
     Join,
     Prove,
     Finalize,
@@ -20,7 +19,6 @@ impl FromStr for Command {
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_uppercase().as_str() {
-            "EXECUTE" => Ok(Command::Execute),
             "JOIN" => Ok(Command::Join),
             "PROVE" => Ok(Command::Prove),
             "FINALIZE" => Ok(Command::Finalize),
@@ -36,7 +34,6 @@ impl FromStr for Command {
 impl Command {
     pub fn apply(self, agent: &impl Agent, input: Vec<u8>) -> Result<Vec<u8>> {
         match self {
-            Command::Execute => agent.execute(input),
             Command::Join => agent.join(input),
             Command::Prove => agent.prove(input),
             Command::Finalize => agent.finalize(input),

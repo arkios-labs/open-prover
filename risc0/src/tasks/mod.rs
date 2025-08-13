@@ -65,7 +65,6 @@ pub struct FinalizeInput {
 }
 
 pub trait Agent {
-    fn execute(&self, data: Vec<u8>) -> Result<Vec<u8>>;
     fn prove(&self, data: Vec<u8>) -> Result<Vec<u8>>;
     fn join(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn keccak(&self, prove_keccak_request: Vec<u8>) -> Result<Vec<u8>>;
