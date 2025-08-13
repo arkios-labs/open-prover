@@ -51,7 +51,7 @@ impl Agent for RiscZeroAgent {
             .lift(&segment_receipt)
             .with_context(|| "Failed to lift".to_string())?;
 
-        let serialized = serialize_obj(&lift_receipt).expect("Failed to serialize");
+        let serialized = serialize_obj(&lift_receipt).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
         info!("Agent::prove() took {elapsed:?}");
         Ok(serialized)
@@ -82,7 +82,7 @@ impl Agent for RiscZeroAgent {
 
         let joined = self.prover.join(&left_receipt, &right_receipt)?;
 
-        let serialized = serialize_obj(&joined).expect("Failed to serialize");
+        let serialized = serialize_obj(&joined).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
         info!("Agent::join() took {elapsed:?}");
         Ok(serialized)
@@ -104,7 +104,7 @@ impl Agent for RiscZeroAgent {
 
         let keccak_receipt = self.prover.prove_keccak(&prove_keccak_request);
 
-        let serialized = serialize_obj(&keccak_receipt?).expect("Failed to serialize");
+        let serialized = serialize_obj(&keccak_receipt?).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
         info!("Agent::keccak() took {elapsed:?}");
         Ok(serialized)
@@ -404,8 +404,8 @@ mod tests {
             while let Some(left) = queue.pop_front() {
                 if let Some(right) = queue.pop_front() {
                     let join_input =
-                        serde_json::to_vec(&vec![left, right]).expect("serialize failed");
-                    let joined = agent.join(join_input).expect("Union failed");
+                        serde_json::to_vec(&vec![left, right]).context("serialize failed")?;
+                    let joined = agent.join(join_input).context("Union failed")?;
                     assert!(!joined.is_empty(), "Joined result should not be empty");
                     next_level.push_back(joined);
                 } else {
@@ -454,13 +454,13 @@ mod tests {
                     .claim_digest
                     .as_bytes()
                     .try_into()
-                    .expect("claim_digest must be 32 bytes"),
+                    .context("claim_digest must be 32 bytes")?,
                 po2: keccak_req.po2,
                 control_root: keccak_req
                     .control_root
                     .as_bytes()
                     .try_into()
-                    .expect("control_root must be 32 bytes"),
+                    .context("control_root must be 32 bytes")?,
                 input: keccak_req.input.clone(),
             };
 
@@ -519,8 +519,8 @@ mod tests {
 
         let keccak_receipts_serialized: Vec<Vec<u8>> = keccak_receipts
             .into_iter()
-            .map(|r| serialize_obj(&r).expect("Failed to serialize receipt"))
-            .collect();
+            .map(|r| serialize_obj(&r).context("Failed to serialize receipt"))
+            .collect::<Result<_, _>>()?;
 
         let mut queue: VecDeque<Vec<u8>> = VecDeque::from(keccak_receipts_serialized.clone());
 
@@ -532,8 +532,8 @@ mod tests {
             while let Some(left) = queue.pop_front() {
                 if let Some(right) = queue.pop_front() {
                     let union_input =
-                        serde_json::to_vec(&vec![left, right]).expect("serialize failed");
-                    let joined = agent.union(union_input).expect("Union failed");
+                        serde_json::to_vec(&vec![left, right]).context("serialize failed")?;
+                    let joined = agent.union(union_input).context("Union failed")?;
                     assert!(!joined.is_empty(), "Joined result should not be empty");
                     next_level.push_back(joined);
                 } else {
@@ -592,7 +592,7 @@ mod tests {
             union_root_serialized,
             assumptions_serialized,
         ])
-        .expect("Failed to serialize join input");
+        .context("Failed to serialize join input")?;
 
         let resolved_receipt = agent.resolve(resolve_input)?;
 
@@ -680,7 +680,7 @@ mod tests {
 
         let snark_receipt = agent
             .stark2snark(stark_receipt_serialized)
-            .expect("stark2snark conversion failed: could not convert stark receipt to snark");
+            .context("stark2snark conversion failed: could not convert stark receipt to snark")?;
 
         info!(
             "stark2snark result: ({size} bytes)",
