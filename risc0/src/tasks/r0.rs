@@ -319,6 +319,117 @@ mod tests {
     use tracing::info;
 
     #[test]
+    fn test_prove_all_segments() -> Result<()> {
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
+
+        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
+        info!("Loading session from: {session_path:?}");
+
+        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
+        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
+            .context("Failed to deserialize session")?;
+        let segment_count = session.segments.len();
+        assert!(segment_count > 0, "No segments found in session");
+
+        info!("Found {segment_count} segments. Starting proof generation...",);
+        let mut all_receipts = Vec::with_capacity(segment_count);
+        let start = Instant::now();
+
+        for (i, segment) in session.segments.iter().enumerate() {
+            let current_index = i + 1;
+            info!("Proving segment [{current_index}/{segment_count}]");
+            let bytes = serialize_obj(segment)?;
+            let lifted_bytes = agent.prove(bytes)?;
+
+            assert!(
+                !lifted_bytes.is_empty(),
+                "Lifted bytes should not be empty for segment {current_index}"
+            );
+
+            info!(
+                "Segment [{current_index}] proof size: {proof_size}",
+                proof_size = lifted_bytes.len()
+            );
+
+            let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
+                .context(format!(
+                    "Failed to deserialize receipt for segment {current_index}"
+                ))?;
+
+            assert!(
+                lifted_receipt.claim.as_value().is_ok(),
+                "Lifted receipt should have a claim"
+            );
+
+            all_receipts.push(lifted_receipt);
+        }
+
+        let receipts_serialized = serialize_to_bincode_bytes(&all_receipts)?;
+
+        info!(
+            "prove result: ({size} bytes)",
+            size = receipts_serialized.len()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_join_on_lifted_receipts() -> Result<()> {
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
+
+        let proof_path =
+            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_lifted_receipt.bin");
+        info!("Loading lifted proof from: {proof_path:?}");
+        let lifted_receipts = fs::read(&proof_path).context("Failed to read receipt file")?;
+
+        let lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> =
+            deserialize_from_bincode_bytes(&lifted_receipts).context("Failed to deserialize")?;
+        let receipt_count = lifted_receipts.len();
+        assert!(receipt_count > 0, "No lifted receipts found");
+
+        info!("Loaded {receipt_count} lifted receipts");
+
+        let serialized_receipts: Vec<Vec<u8>> = lifted_receipts
+            .into_iter()
+            .map(|r| serialize_obj(&r).unwrap())
+            .collect();
+
+        let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
+        let start = Instant::now();
+
+        while queue.len() > 1 {
+            let mut next_level: VecDeque<Vec<u8>> = VecDeque::with_capacity((queue.len() + 1) / 2);
+
+            while let Some(left) = queue.pop_front() {
+                if let Some(right) = queue.pop_front() {
+                    let join_input =
+                        serde_json::to_vec(&vec![left, right]).expect("serialize failed");
+                    let joined = agent.join(join_input).expect("Union failed");
+                    assert!(!joined.is_empty(), "Joined result should not be empty");
+                    next_level.push_back(joined);
+                } else {
+                    next_level.push_back(left);
+                    break;
+                }
+            }
+
+            info!(
+                "Level complete | produced {} nodes (from {} inputs)",
+                next_level.len(),
+                receipt_count
+            );
+            queue = next_level;
+        }
+
+        let final_result = queue.pop_front().unwrap();
+
+        info!("join result: ({size} bytes)", size = final_result.len());
+
+        Ok(())
+    }
+
+    #[test]
     fn test_keccak_on_pending_keccaks() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
@@ -442,117 +553,6 @@ mod tests {
         let final_result = queue.pop_front().unwrap();
 
         info!("union result: ({size} bytes)", size = final_result.len());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_prove_all_segments() -> Result<()> {
-        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
-
-        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
-        info!("Loading session from: {session_path:?}");
-
-        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
-        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
-            .context("Failed to deserialize session")?;
-        let segment_count = session.segments.len();
-        assert!(segment_count > 0, "No segments found in session");
-
-        info!("Found {segment_count} segments. Starting proof generation...",);
-        let mut all_receipts = Vec::with_capacity(segment_count);
-        let start = Instant::now();
-
-        for (i, segment) in session.segments.iter().enumerate() {
-            let current_index = i + 1;
-            info!("Proving segment [{current_index}/{segment_count}]");
-            let bytes = serialize_obj(segment)?;
-            let lifted_bytes = agent.prove(bytes)?;
-
-            assert!(
-                !lifted_bytes.is_empty(),
-                "Lifted bytes should not be empty for segment {current_index}"
-            );
-
-            info!(
-                "Segment [{current_index}] proof size: {proof_size}",
-                proof_size = lifted_bytes.len()
-            );
-
-            let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
-                .context(format!(
-                    "Failed to deserialize receipt for segment {current_index}"
-                ))?;
-
-            assert!(
-                lifted_receipt.claim.as_value().is_ok(),
-                "Lifted receipt should have a claim"
-            );
-
-            all_receipts.push(lifted_receipt);
-        }
-
-        let receipts_serialized = serialize_to_bincode_bytes(&all_receipts)?;
-
-        info!(
-            "prove result: ({size} bytes)",
-            size = receipts_serialized.len()
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_join_on_lifted_receipts() -> Result<()> {
-        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
-
-        let proof_path =
-            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_lifted_receipt.bin");
-        info!("Loading lifted proof from: {proof_path:?}");
-        let lifted_receipts = fs::read(&proof_path).context("Failed to read receipt file")?;
-
-        let lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> =
-            deserialize_from_bincode_bytes(&lifted_receipts).context("Failed to deserialize")?;
-        let receipt_count = lifted_receipts.len();
-        assert!(receipt_count > 0, "No lifted receipts found");
-
-        info!("Loaded {receipt_count} lifted receipts");
-
-        let serialized_receipts: Vec<Vec<u8>> = lifted_receipts
-            .into_iter()
-            .map(|r| serialize_obj(&r).unwrap())
-            .collect();
-
-        let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
-        let start = Instant::now();
-
-        while queue.len() > 1 {
-            let mut next_level: VecDeque<Vec<u8>> = VecDeque::with_capacity((queue.len() + 1) / 2);
-
-            while let Some(left) = queue.pop_front() {
-                if let Some(right) = queue.pop_front() {
-                    let join_input =
-                        serde_json::to_vec(&vec![left, right]).expect("serialize failed");
-                    let joined = agent.join(join_input).expect("Union failed");
-                    assert!(!joined.is_empty(), "Joined result should not be empty");
-                    next_level.push_back(joined);
-                } else {
-                    next_level.push_back(left);
-                    break;
-                }
-            }
-
-            info!(
-                "Level complete | produced {} nodes (from {} inputs)",
-                next_level.len(),
-                receipt_count
-            );
-            queue = next_level;
-        }
-
-        let final_result = queue.pop_front().unwrap();
-
-        info!("join result: ({size} bytes)", size = final_result.len());
 
         Ok(())
     }
