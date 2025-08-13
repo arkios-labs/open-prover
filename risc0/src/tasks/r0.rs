@@ -1,17 +1,14 @@
 use crate::tasks::{convert, deserialize_obj, serialize_obj, Agent, ProveKeccakRequestLocal};
 use anyhow::{bail, Context, Result};
 use hex::FromHex;
-use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
-    get_prover_server, seal_to_json, Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts,
-    ProverServer, Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext,
+    get_prover_server, Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts, ProverServer,
+    Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext,
 };
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Cursor;
 use std::rc::Rc;
-use tempfile::tempdir;
+use std::time::Instant;
 use tracing::info;
 
 pub struct RiscZeroAgent {
@@ -35,6 +32,9 @@ impl RiscZeroAgent {
 
 impl Agent for RiscZeroAgent {
     fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        info!("Agent::prove()");
+        let start_time = Instant::now();
+
         if input.is_empty() {
             bail!("prove input is empty");
         }
@@ -46,19 +46,20 @@ impl Agent for RiscZeroAgent {
             .prove_segment(&self.verifier_ctx, &segment)
             .context("Failed to prove segment")?;
 
-        info!("segment_receipt: {:?}", &segment_receipt);
         let lift_receipt = self
             .prover
             .lift(&segment_receipt)
             .with_context(|| "Failed to lift".to_string())?;
 
         let serialized = serialize_obj(&lift_receipt).expect("Failed to serialize");
-
+        let elapsed = start_time.elapsed();
+        info!("Agent::prove() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn join(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::join()");
+        info!("Agent::join()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("join input is empty");
@@ -82,12 +83,14 @@ impl Agent for RiscZeroAgent {
         let joined = self.prover.join(&left_receipt, &right_receipt)?;
 
         let serialized = serialize_obj(&joined).expect("Failed to serialize");
-
+        let elapsed = start_time.elapsed();
+        info!("Agent::join() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn keccak(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::keccak()");
+        info!("Agent::keccak()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("keccak input is empty");
@@ -102,11 +105,14 @@ impl Agent for RiscZeroAgent {
         let keccak_receipt = self.prover.prove_keccak(&prove_keccak_request);
 
         let serialized = serialize_obj(&keccak_receipt?).expect("Failed to serialize");
+        let elapsed = start_time.elapsed();
+        info!("Agent::keccak() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn union(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::union()");
+        info!("Agent::union()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("union input is empty");
@@ -134,12 +140,14 @@ impl Agent for RiscZeroAgent {
             .into_unknown();
 
         let serialized = serialize_obj(&unioned).context("Failed to serialize union receipt")?;
-
+        let elapsed = start_time.elapsed();
+        info!("Agent::union() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::resolve()");
+        info!("Agent::resolve()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("resolve input is empty");
@@ -227,11 +235,14 @@ impl Agent for RiscZeroAgent {
         info!("Resolve operation completed successfully: {assumptions_len}");
 
         let serialized = serialize_obj(&root).context("Failed to serialize conditional receipt")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::resolve() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::finalize()");
+        info!("Agent::finalize()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("finalize input is empty");
@@ -260,11 +271,15 @@ impl Agent for RiscZeroAgent {
             .verify(image_id)
             .context("Receipt verification failed")?;
 
-        serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
+        let elapsed = start_time.elapsed();
+        info!("Agent::finalize() took {elapsed:?}");
+        let serialized = serialize_obj(&rollup_receipt).context("Failed to serialize receipt")?;
+        Ok(serialized)
     }
 
     fn stark2snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::get_snark_receipt()");
+        info!("Agent::stark2snark()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("get_snark_receipt input is empty");
@@ -283,7 +298,8 @@ impl Agent for RiscZeroAgent {
 
         let serialized =
             serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;
-
+        let elapsed = start_time.elapsed();
+        info!("Agent::stark2snark() took {elapsed:?}");
         Ok(serialized)
     }
 }
