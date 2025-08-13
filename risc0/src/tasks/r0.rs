@@ -453,13 +453,6 @@ mod tests {
 
         let file_path = PathBuf::from("metadata/keccak/keccak_receipts.json");
         let receipts_json = serde_json::to_string_pretty(&all_receipts)?;
-        fs::write(&file_path, receipts_json)
-            .with_context(|| format!("Failed to write receipts to {:?}", file_path))?;
-
-        assert!(
-            fs::metadata(&file_path).is_ok(),
-            "Keccak receipts file should be created"
-        );
 
         info!(
             "All {} keccak receipts written to {:?} in {:?}",
@@ -553,15 +546,6 @@ mod tests {
         let union_receipt: SuccinctReceipt<Unknown> = deserialize_obj(final_result)?;
 
         let union_json = serde_json::to_string_pretty(&union_receipt)?;
-        let output_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
-        fs::write(&output_path, union_json)?;
-
-        assert!(
-            fs::metadata(&output_path).is_ok(),
-            "Unioned receipt file should be created"
-        );
-
-        info!("Unioned receipt written to {:?}", output_path);
 
         Ok(())
     }
@@ -623,19 +607,9 @@ mod tests {
             "Number of receipts should match segment count"
         );
 
-        let output_path = env::current_dir()?.join("metadata/lifted_receipts.json");
-        let output_json = serde_json::to_string_pretty(&all_receipts)?;
-        fs::write(&output_path, output_json).context("Failed to write lifted receipts JSON")?;
-
-        assert!(
-            fs::metadata(&output_path).is_ok(),
-            "Lifted receipts file should be created"
-        );
-
         info!(
-            "All {} segment receipts written to {:?} in {:?}",
+            "All {} segment receipts generated in {:?}",
             segment_count,
-            output_path,
             start.elapsed()
         );
 
@@ -716,12 +690,6 @@ mod tests {
         );
 
         let root_json = serde_json::to_string_pretty(&root_receipt)?;
-        fs::write("metadata/root_receipt.json", root_json)?;
-
-        assert!(
-            fs::metadata("metadata/root_receipt.json").is_ok(),
-            "Root receipt file should be created"
-        );
 
         info!("Root receipt written to metadata/root_receipt.json");
 
@@ -786,12 +754,6 @@ mod tests {
         );
 
         let resolved_json = serde_json::to_string_pretty(&resolved_receipt)?;
-        fs::write("metadata/resolved_receipt.json", resolved_json)?;
-
-        assert!(
-            fs::metadata("metadata/resolved_receipt.json").is_ok(),
-            "Resolved receipt file should be created"
-        );
 
         info!("Resolved receipt written to metadata/resolved_receipt.json");
 
@@ -863,12 +825,6 @@ mod tests {
         );
 
         let finalized_json = serde_json::to_string_pretty(&finalized_receipt)?;
-        fs::write("metadata/result/finalized_receipt.json", finalized_json)?;
-
-        assert!(
-            fs::metadata("metadata/result/finalized_receipt.json").is_ok(),
-            "Finalized receipt file should be created"
-        );
 
         info!("Final STARK receipt written to metadata/result/stark.json");
 
@@ -913,12 +869,6 @@ mod tests {
         );
 
         let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
-        fs::write("metadata/result/groth16.json", groth16_json)?;
-
-        assert!(
-            fs::metadata("metadata/result/groth16.json").is_ok(),
-            "Groth16 receipt file should be created"
-        );
 
         Ok(())
     }
