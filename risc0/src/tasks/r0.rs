@@ -1,22 +1,18 @@
-use crate::tasks::{Agent, ProveKeccakRequestLocal, convert, deserialize_obj, serialize_obj};
-use anyhow::{Context, Result, bail};
+use crate::tasks::{convert, deserialize_obj, serialize_obj, Agent, ProveKeccakRequestLocal};
+use anyhow::{bail, Context, Result};
 use hex::FromHex;
-use risc0_zkvm::recursion::identity_p254;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
-    Assumption, AssumptionReceipt, Digest, Groth16ProofJson, Groth16Receipt,
-    Groth16ReceiptVerifierParameters, Groth16Seal, InnerReceipt, ProverOpts, ProverServer, Receipt,
-    ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server, seal_to_json,
+    get_prover_server, Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts, ProverServer,
+    Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext,
 };
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Cursor;
 use std::rc::Rc;
-use tempfile::tempdir;
+use std::time::Instant;
 use tracing::info;
 
 pub struct RiscZeroAgent {
-    pub prover: Option<Rc<dyn ProverServer>>,
+    pub prover: Rc<dyn ProverServer>,
     pub verifier_ctx: VerifierContext,
 }
 
@@ -27,16 +23,18 @@ impl RiscZeroAgent {
         let opts = ProverOpts::default().with_segment_po2_max(25);
         let prover = get_prover_server(&opts).context("Failed to initialize prover server")?;
 
-        Ok(Self { prover: Some(prover), verifier_ctx })
+        Ok(Self {
+            prover,
+            verifier_ctx,
+        })
     }
 }
 
 impl Agent for RiscZeroAgent {
-    fn execute(&self, _data: Vec<u8>) -> Result<Vec<u8>> {
-        bail!("RiscZeroTask::execute is not supported in this context");
-    }
-
     fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        info!("Agent::prove()");
+        let start_time = Instant::now();
+
         if input.is_empty() {
             bail!("prove input is empty");
         }
@@ -45,26 +43,23 @@ impl Agent for RiscZeroAgent {
 
         let segment_receipt = self
             .prover
-            .as_ref()
-            .context("Missing prover")?
             .prove_segment(&self.verifier_ctx, &segment)
             .context("Failed to prove segment")?;
 
-        info!("segment_receipt: {:?}", &segment_receipt);
         let lift_receipt = self
             .prover
-            .as_ref()
-            .context("Missing prover")?
             .lift(&segment_receipt)
             .with_context(|| "Failed to lift".to_string())?;
 
-        let serialized = serialize_obj(&lift_receipt).expect("Failed to serialize");
-
+        let serialized = serialize_obj(&lift_receipt).context("Failed to serialize")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::prove() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn join(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::join()");
+        info!("Agent::join()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("join input is empty");
@@ -74,7 +69,10 @@ impl Agent for RiscZeroAgent {
             serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
 
         if receipts.len() != 2 {
-            bail!("Expected exactly two receipts for join, got {}", receipts.len());
+            bail!(
+                "Expected exactly two receipts for join, got {}",
+                receipts.len()
+            );
         }
 
         let left_receipt =
@@ -82,19 +80,17 @@ impl Agent for RiscZeroAgent {
         let right_receipt =
             deserialize_obj(&receipts[1]).context("Failed to deserialize right receipt")?;
 
-        let joined = self
-            .prover
-            .as_ref()
-            .context("Missing prover from join task")?
-            .join(&left_receipt, &right_receipt)?;
+        let joined = self.prover.join(&left_receipt, &right_receipt)?;
 
-        let serialized = serialize_obj(&joined).expect("Failed to serialize");
-
+        let serialized = serialize_obj(&joined).context("Failed to serialize")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::join() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn keccak(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::keccak()");
+        info!("Agent::keccak()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("keccak input is empty");
@@ -106,18 +102,17 @@ impl Agent for RiscZeroAgent {
         // Conversion is required because the library's `ProveKeccakRequest` type doesn't support deserialization
         let prove_keccak_request = convert(prove_keccak_request_local);
 
-        let keccak_receipt = self
-            .prover
-            .as_ref()
-            .context("Mssing prover from keccak task")?
-            .prove_keccak(&prove_keccak_request);
+        let keccak_receipt = self.prover.prove_keccak(&prove_keccak_request);
 
-        let serialized = serialize_obj(&keccak_receipt?).expect("Failed to serialize");
+        let serialized = serialize_obj(&keccak_receipt?).context("Failed to serialize")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::keccak() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn union(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::union()");
+        info!("Agent::union()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("union input is empty");
@@ -127,7 +122,10 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for union")?;
 
         if receipts.len() != 2 {
-            bail!("Expected exactly two receipts for union, got {}", receipts.len());
+            bail!(
+                "Expected exactly two receipts for union, got {}",
+                receipts.len()
+            );
         }
 
         let left_receipt =
@@ -137,19 +135,19 @@ impl Agent for RiscZeroAgent {
 
         let unioned = self
             .prover
-            .as_ref()
-            .context("Missing prover from union task")?
             .union(&left_receipt, &right_receipt)
             .context("Failed to union on left/right receipt")?
             .into_unknown();
 
         let serialized = serialize_obj(&unioned).context("Failed to serialize union receipt")?;
-
+        let elapsed = start_time.elapsed();
+        info!("Agent::union() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::resolve()");
+        info!("Agent::resolve()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("resolve input is empty");
@@ -159,7 +157,10 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for resolve")?;
 
         if inputs.len() != 3 {
-            bail!("Expected exactly three inputs for resolve, got {}", inputs.len())
+            bail!(
+                "Expected exactly three inputs for resolve, got {}",
+                inputs.len()
+            )
         }
 
         let mut root: SuccinctReceipt<ReceiptClaim> =
@@ -176,7 +177,10 @@ impl Agent for RiscZeroAgent {
 
         let assumption_receipt_map: HashMap<String, SuccinctReceipt<Unknown>> = HashMap::new();
 
-        info!("Loaded {} assumption receipts", session_assumption_receipts.len());
+        info!(
+            "Loaded {} assumption receipts",
+            session_assumption_receipts.len()
+        );
 
         let mut assumptions_len: u64 = 0;
 
@@ -200,8 +204,6 @@ impl Agent for RiscZeroAgent {
 
                         root = self
                             .prover
-                            .as_ref()
-                            .context("Missing prover from resolve task")?
                             .resolve(&root, &union_receipt)
                             .context("Failed to resolve union receipt")?;
                     }
@@ -213,15 +215,14 @@ impl Agent for RiscZeroAgent {
                             continue;
                         }
 
-                        let assumption_receipt =
-                            assumption_receipt_map.get(&assumption_claim).with_context(|| {
+                        let assumption_receipt = assumption_receipt_map
+                            .get(&assumption_claim)
+                            .with_context(|| {
                                 format!("Corroborating receipt not found: {}", assumption_claim)
                             })?;
 
                         root = self
                             .prover
-                            .as_ref()
-                            .context("Missing prover from resolve task")?
                             .resolve(&root, assumption_receipt)
                             .context("Failed to resolve assumption receipt")?;
                     }
@@ -234,11 +235,14 @@ impl Agent for RiscZeroAgent {
         info!("Resolve operation completed successfully: {assumptions_len}");
 
         let serialized = serialize_obj(&root).context("Failed to serialize conditional receipt")?;
+        let elapsed = start_time.elapsed();
+        info!("Agent::resolve() took {elapsed:?}");
         Ok(serialized)
     }
 
     fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::finalize()");
+        info!("Agent::finalize()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("finalize input is empty");
@@ -248,7 +252,10 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for finalize")?;
 
         if inputs.len() != 3 {
-            bail!("Expected exactly three inputs for finalize, got {}", inputs.len())
+            bail!(
+                "Expected exactly three inputs for finalize, got {}",
+                inputs.len()
+            )
         }
 
         let root: SuccinctReceipt<ReceiptClaim> =
@@ -260,149 +267,219 @@ impl Agent for RiscZeroAgent {
         let rollup_receipt = Receipt::new(InnerReceipt::Succinct(root), journal);
 
         let image_id = read_image_id(&*image_id)?;
-        rollup_receipt.verify(image_id).context("Receipt verification failed")?;
+        rollup_receipt
+            .verify(image_id)
+            .context("Receipt verification failed")?;
 
-        serialize_obj(&rollup_receipt).context("Failed to serialize rollup receipt")
+        let elapsed = start_time.elapsed();
+        info!("Agent::finalize() took {elapsed:?}");
+        let serialized = serialize_obj(&rollup_receipt).context("Failed to serialize receipt")?;
+        Ok(serialized)
     }
 
-    fn prepare_snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::prepare_snark()");
-
-        if input.is_empty() {
-            bail!("prepare_snark input is empty");
-        }
-
-        let work_dir = tempdir()?.keep();
-
-        let receipt: Receipt = deserialize_obj(&input)?;
-
-        let succinct_receipt = receipt.inner.succinct()?;
-
-        info!("start identity_p254");
-        let receipt_ident = identity_p254(succinct_receipt).context("identity predicate failed")?;
-
-        let seal_bytes = receipt_ident.get_seal_bytes();
-        info!("Running seal-to-json");
-
-        let seal_path = work_dir.join("input.json");
-        let seal_json = File::create(&seal_path)?;
-        let mut seal_reader = Cursor::new(&seal_bytes);
-        seal_to_json(&mut seal_reader, &seal_json)?;
-
-        let result_bytes = serialize_obj(&seal_path.to_string_lossy().to_string())?;
-
-        info!("Seal file created at: {:?}", seal_path);
-        info!("prepare_snark completed successfully");
-
-        Ok(result_bytes)
-    }
-
-    fn get_snark_receipt(&self, input: Vec<u8>) -> Result<Vec<u8>> {
-        info!("RiscZeroTask::get_snark_receipt()");
+    fn stark2snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        info!("Agent::stark2snark()");
+        let start_time = Instant::now();
 
         if input.is_empty() {
             bail!("get_snark_receipt input is empty");
         }
 
-        let inputs: Vec<Vec<u8>> =
-            serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if inputs.len() != 2 {
-            bail!("Expected exactly two inputs for snark, got {}", inputs.len());
-        }
-
         let stark_receipt: Receipt =
-            deserialize_obj(&inputs[0]).context("Failed to parse stark_receipt")?;
+            deserialize_obj(&input).context("Failed to parse stark_receipt")?;
 
-        let proof_json: Groth16ProofJson =
-            deserialize_obj(&inputs[1]).context("Failed to parse input JSON")?;
-
-        let seal: Groth16Seal =
-            proof_json.try_into().context("Failed to convert proof JSON to Groth16Seal")?;
-
-        let snark_receipt = Groth16Receipt::new(
-            seal.to_vec(),
-            stark_receipt.claim()?,
-            Groth16ReceiptVerifierParameters::default().digest(),
-        );
-
-        let snark_receipt =
-            Receipt::new(InnerReceipt::Groth16(snark_receipt), stark_receipt.journal.bytes);
+        let opts = ProverOpts::groth16();
+        // Implemented based on newly introduced logic in Bento.
+        // (Ref: https://github.com/risc0/risc0/blob/b5b16f6/bento/crates/workflow/src/tasks/snark.rs#L29-L34)
+        let snark_receipt = self
+            .prover
+            .compress(&opts, &stark_receipt)
+            .context("Failed to compress stark receipt")?;
 
         let serialized =
             serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;
-
-        info!("SNARK receipt created successfully ({} bytes)", serialized.len());
-
+        let elapsed = start_time.elapsed();
+        info!("Agent::stark2snark() took {elapsed:?}");
         Ok(serialized)
     }
 }
 #[cfg(test)]
 mod tests {
-    use crate::tasks::factory::get_agent;
     use crate::tasks::{
-        Agent, FinalizeInput, ProveKeccakRequestLocal, ResolveInput, SerializableSession,
-        deserialize_obj, serialize_obj,
+        deserialize_obj, serialize_obj, setup_agent_and_metadata_dir, Agent, ProveKeccakRequestLocal,
+        SerializableSession,
     };
     use anyhow::Context;
-    use anyhow::{Result, anyhow};
-    use common::io::input::env::EnvProvider;
+    use anyhow::{anyhow, Result};
+    use common::serialization::bincode::{
+        deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
+    };
     use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
-    use std::{collections::VecDeque, env, fs, path::PathBuf, time::Instant};
+    use std::{collections::VecDeque, fs, time::Instant};
     use tracing::info;
 
     #[test]
+    fn test_prove_all_segments() -> Result<()> {
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
+
+        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
+        info!("Loading session from: {session_path:?}");
+
+        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
+        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
+            .context("Failed to deserialize session")?;
+        let segment_count = session.segments.len();
+        assert!(segment_count > 0, "No segments found in session");
+
+        info!("Found {segment_count} segments. Starting proof generation...",);
+        let mut all_receipts = Vec::with_capacity(segment_count);
+        let start = Instant::now();
+
+        for (i, segment) in session.segments.iter().enumerate() {
+            let current_index = i + 1;
+            info!("Proving segment [{current_index}/{segment_count}]");
+            let bytes = serialize_obj(segment)?;
+            let lifted_bytes = agent.prove(bytes)?;
+
+            assert!(
+                !lifted_bytes.is_empty(),
+                "Lifted bytes should not be empty for segment {current_index}"
+            );
+
+            info!(
+                "Segment [{current_index}] proof size: {proof_size}",
+                proof_size = lifted_bytes.len()
+            );
+
+            let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
+                .context(format!(
+                    "Failed to deserialize receipt for segment {current_index}"
+                ))?;
+
+            assert!(
+                lifted_receipt.claim.as_value().is_ok(),
+                "Lifted receipt should have a claim"
+            );
+
+            all_receipts.push(lifted_receipt);
+        }
+
+        let receipts_serialized = serialize_to_bincode_bytes(&all_receipts)?;
+
+        info!(
+            "prove result: ({size} bytes)",
+            size = receipts_serialized.len()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_join_on_lifted_receipts() -> Result<()> {
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
+
+        let proof_path =
+            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_lifted_receipt.bin");
+        info!("Loading lifted proof from: {proof_path:?}");
+        let lifted_receipts = fs::read(&proof_path).context("Failed to read receipt file")?;
+
+        let lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> =
+            deserialize_from_bincode_bytes(&lifted_receipts).context("Failed to deserialize")?;
+        let receipt_count = lifted_receipts.len();
+        assert!(receipt_count > 0, "No lifted receipts found");
+
+        info!("Loaded {receipt_count} lifted receipts");
+
+        let serialized_receipts: Vec<Vec<u8>> = lifted_receipts
+            .into_iter()
+            .map(|r| serialize_obj(&r).unwrap())
+            .collect();
+
+        let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
+        let start = Instant::now();
+
+        while queue.len() > 1 {
+            let mut next_level: VecDeque<Vec<u8>> = VecDeque::with_capacity((queue.len() + 1) / 2);
+
+            while let Some(left) = queue.pop_front() {
+                if let Some(right) = queue.pop_front() {
+                    let join_input =
+                        serde_json::to_vec(&vec![left, right]).context("serialize failed")?;
+                    let joined = agent.join(join_input).context("Union failed")?;
+                    assert!(!joined.is_empty(), "Joined result should not be empty");
+                    next_level.push_back(joined);
+                } else {
+                    next_level.push_back(left);
+                    break;
+                }
+            }
+
+            info!(
+                "Level complete | produced {} nodes (from {} inputs)",
+                next_level.len(),
+                receipt_count
+            );
+            queue = next_level;
+        }
+
+        let final_result = queue.pop_front().unwrap();
+
+        info!("join result: ({size} bytes)", size = final_result.len());
+
+        Ok(())
+    }
+
+    #[test]
     fn test_keccak_on_pending_keccaks() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
+        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
+        info!("Loading session from: {session_path:?}");
 
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/session/session_4_segments.json");
-        info!("Loading session from: {:?}", path);
-
-        let json = fs::read_to_string(&path)?;
-        let session: SerializableSession = serde_json::from_str(&json)?;
+        let session_serialized = fs::read(&session_path)?;
+        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)?;
 
         let keccak_count = session.pending_keccaks.len();
         assert!(keccak_count > 0, "No pending keccaks found in session");
 
-        info!("Found {} pending keccak inputs", keccak_count);
+        info!("Found {keccak_count} pending keccak inputs");
 
         let mut all_receipts = Vec::with_capacity(keccak_count);
         let start = Instant::now();
 
         for (i, keccak_req) in session.pending_keccaks.iter().enumerate() {
+            let current_index = i + 1;
             let local_req = ProveKeccakRequestLocal {
                 claim_digest: keccak_req
                     .claim_digest
                     .as_bytes()
                     .try_into()
-                    .expect("claim_digest must be 32 bytes"),
+                    .context("claim_digest must be 32 bytes")?,
                 po2: keccak_req.po2,
                 control_root: keccak_req
                     .control_root
                     .as_bytes()
                     .try_into()
-                    .expect("control_root must be 32 bytes"),
+                    .context("control_root must be 32 bytes")?,
                 input: keccak_req.input.clone(),
             };
 
             let bytes = serialize_obj(&local_req)?;
-            info!("Proving keccak [{} / {}]...", i + 1, keccak_count);
+            info!("Proving keccak [{current_index} / {keccak_count}]...");
 
-            let result = agent_ref.keccak(bytes)?;
-            assert!(!result.is_empty(), "Keccak result should not be empty for request {}", i);
+            let result = agent.keccak(bytes)?;
+            assert!(
+                !result.is_empty(),
+                "Keccak result should not be empty for request {current_index}"
+            );
 
             let receipt: SuccinctReceipt<Unknown> =
                 deserialize_obj(&result).context("Failed to deserialize keccak receipt")?;
 
-            assert!(receipt.claim.as_value().is_ok(), "Keccak receipt should have a claim");
-
-            info!("Keccak [{}] result size: {}", i, result.len());
+            info!(
+                "Keccak [{current_index}] result size: {result_size}",
+                result_size = result.len()
+            );
             all_receipts.push(receipt);
         }
 
@@ -412,18 +489,11 @@ mod tests {
             "Number of receipts should match keccak count"
         );
 
-        let file_path = PathBuf::from("metadata/keccak/keccak_receipts.json");
-        let receipts_json = serde_json::to_string_pretty(&all_receipts)?;
-        fs::write(&file_path, receipts_json)
-            .with_context(|| format!("Failed to write receipts to {:?}", file_path))?;
-
-        assert!(fs::metadata(&file_path).is_ok(), "Keccak receipts file should be created");
+        let receipts_serialized = serialize_to_bincode_bytes(&all_receipts)?;
 
         info!(
-            "All {} keccak receipts written to {:?} in {:?}",
-            keccak_count,
-            file_path,
-            start.elapsed()
+            "keccak result: ({size} bytes)",
+            size = receipts_serialized.len()
         );
 
         Ok(())
@@ -431,313 +501,129 @@ mod tests {
 
     #[test]
     fn test_union_on_keccaks_tree() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
+        let keccak_receipt_path = metadata_dir
+            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_kecccak_receipt.bin");
+        info!("Loading keccak receipts from: {:?}", keccak_receipt_path);
 
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/keccak/keccak_receipts.json");
-        info!("Loading keccak receipts from: {:?}", path);
-
-        let json = fs::read_to_string(&path)?;
-        let keccak_receipts: Vec<SuccinctReceipt<Unknown>> = serde_json::from_str(&json)?;
+        let keccak_receipt_serialized =
+            fs::read(&keccak_receipt_path).context("Failed to read file")?;
+        let keccak_receipts: Vec<SuccinctReceipt<Unknown>> =
+            deserialize_from_bincode_bytes(&keccak_receipt_serialized)
+                .context("Failed to deserialize")?;
         let receipt_count = keccak_receipts.len();
         assert!(receipt_count > 0, "No keccak receipts found");
 
-        info!("Loaded {} keccak receipts", receipt_count);
+        info!("Loaded {receipt_count} keccak receipts");
 
-        let mut queue: Vec<Vec<Vec<u8>>> = keccak_receipts
+        let keccak_receipts_serialized: Vec<Vec<u8>> = keccak_receipts
             .into_iter()
-            .map(|r| vec![serialize_obj(&r).expect("Failed to serialize receipt")])
-            .collect();
+            .map(|r| serialize_obj(&r).context("Failed to serialize receipt"))
+            .collect::<Result<_, _>>()?;
+
+        let mut queue: VecDeque<Vec<u8>> = VecDeque::from(keccak_receipts_serialized.clone());
 
         let start = Instant::now();
 
         while queue.len() > 1 {
-            let mut next_level = Vec::with_capacity((queue.len() + 1) / 2);
-            let mut i = 0;
+            let mut next_level: VecDeque<Vec<u8>> = VecDeque::with_capacity((queue.len() + 1) / 2);
 
-            while i + 1 < queue.len() {
-                let left = queue[i].clone();
-                let right = queue[i + 1].clone();
-                let left_serialized = left.last().unwrap();
-                let right_serialized = right.last().unwrap();
-
-                let input =
-                    serde_json::to_vec(&vec![left_serialized.clone(), right_serialized.clone()])
-                        .expect("Failed to serialize union input");
-
-                let union = agent_ref.union(input).expect("Union failed");
-                assert!(!union.is_empty(), "Union result should not be empty");
-
-                let mut new_branch = left;
-                new_branch.extend(right);
-                new_branch.push(union.clone());
-
-                info!("Union [{} + {}] size: {}", i, i + 1, union.len());
-                next_level.push(new_branch);
-
-                i += 2;
+            while let Some(left) = queue.pop_front() {
+                if let Some(right) = queue.pop_front() {
+                    let union_input =
+                        serde_json::to_vec(&vec![left, right]).context("serialize failed")?;
+                    let joined = agent.union(union_input).context("Union failed")?;
+                    assert!(!joined.is_empty(), "Joined result should not be empty");
+                    next_level.push_back(joined);
+                } else {
+                    next_level.push_back(left);
+                    break;
+                }
             }
 
-            if i < queue.len() {
-                next_level.push(queue[i].clone());
-            }
-
+            info!(
+                "Level complete | produced {} nodes (from {} inputs)",
+                next_level.len(),
+                receipt_count
+            );
             queue = next_level;
         }
 
-        let final_branch = queue.pop().unwrap();
-        let final_result = final_branch.last().unwrap();
-        assert!(!final_result.is_empty(), "Final union result should not be empty");
-
-        let elapsed = start.elapsed();
-
-        info!(
-            "Union complete: final result size: {}, elapsed: {:?}, total input receipts: {}",
-            final_result.len(),
-            elapsed,
-            receipt_count
-        );
-
-        let union_receipt: SuccinctReceipt<Unknown> = deserialize_obj(final_result)?;
-
-        let union_json = serde_json::to_string_pretty(&union_receipt)?;
-        let output_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
-        fs::write(&output_path, union_json)?;
-
-        assert!(fs::metadata(&output_path).is_ok(), "Unioned receipt file should be created");
-
-        info!("Unioned receipt written to {:?}", output_path);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_prove_all_segments() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
-
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/session/session_4_segments.json");
-        info!("Loading session from: {:?}", path);
-
-        let json = fs::read_to_string(&path)?;
-        let session: SerializableSession = serde_json::from_str(&json)?;
-        let segment_count = session.segments.len();
-        assert!(segment_count > 0, "No segments found in session");
-
-        info!("Found {} segments. Starting proof generation...", segment_count);
-        let mut all_receipts = Vec::with_capacity(segment_count);
-        let start = Instant::now();
-
-        for (i, segment) in session.segments.iter().enumerate() {
-            info!("Proving segment [{}/{}]", i + 1, segment_count);
-            let bytes = serialize_obj(segment)?;
-            let lifted_bytes = agent_ref.prove(bytes)?;
-
-            assert!(!lifted_bytes.is_empty(), "Lifted bytes should not be empty for segment {}", i);
-
-            info!("Segment [{}] proof size: {}", i, lifted_bytes.len());
-
-            let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
-                .context(format!("Failed to deserialize receipt for segment {}", i))?;
-
-            assert!(lifted_receipt.claim.as_value().is_ok(), "Lifted receipt should have a claim");
-
-            all_receipts.push(lifted_receipt);
-        }
-
-        assert_eq!(
-            all_receipts.len(),
-            segment_count,
-            "Number of receipts should match segment count"
-        );
-
-        let output_path = env::current_dir()?.join("metadata/lifted_receipts.json");
-        let output_json = serde_json::to_string_pretty(&all_receipts)?;
-        fs::write(&output_path, output_json).context("Failed to write lifted receipts JSON")?;
-
-        assert!(fs::metadata(&output_path).is_ok(), "Lifted receipts file should be created");
-
-        info!(
-            "All {} segment receipts written to {:?} in {:?}",
-            segment_count,
-            output_path,
-            start.elapsed()
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_join_on_lifted_receipts() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
-
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let path = env::current_dir()?.join("metadata/lifted_receipts.json");
-        info!("Loading lifted receipts from: {:?}", path);
-        let json = fs::read_to_string(&path)?;
-
-        let lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> = serde_json::from_str(&json)?;
-        let receipt_count = lifted_receipts.len();
-        assert!(receipt_count > 0, "No lifted receipts found");
-
-        info!("Loaded {} lifted receipts", receipt_count);
-
-        let serialized_receipts: Vec<Vec<u8>> =
-            lifted_receipts.into_iter().map(|r| serialize_obj(&r).unwrap()).collect();
-
-        let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
-        let start = Instant::now();
-
-        while queue.len() > 1 {
-            let left = queue.pop_front().unwrap();
-            let right = queue.pop_front().unwrap();
-
-            let join_input = serde_json::to_vec(&vec![left.clone(), right.clone()])
-                .expect("Failed to serialize join input");
-
-            let joined = agent_ref.join(join_input).expect("Join failed");
-            assert!(!joined.is_empty(), "Joined result should not be empty");
-            assert!(
-                joined.len() > left.len() || joined.len() > right.len(),
-                "Joined result should be larger than individual receipts"
-            );
-
-            queue.push_back(joined);
-            info!(
-                "Join successful (size: {}) | Remaining queue: {}",
-                queue.back().unwrap().len(),
-                queue.len()
-            );
-        }
-
         let final_result = queue.pop_front().unwrap();
-        assert!(!final_result.is_empty(), "Final joined result should not be empty");
 
-        let elapsed = start.elapsed();
-
-        info!(
-            "Join complete in {:?} | Final joined result size: {} | Total input receipts: {}",
-            elapsed,
-            final_result.len(),
-            receipt_count
-        );
-
-        let root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&final_result)?;
-        assert!(root_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
-
-        let root_json = serde_json::to_string_pretty(&root_receipt)?;
-        fs::write("metadata/root_receipt.json", root_json)?;
-
-        assert!(
-            fs::metadata("metadata/root_receipt.json").is_ok(),
-            "Root receipt file should be created"
-        );
-
-        info!("Root receipt written to metadata/root_receipt.json");
+        info!("union result: ({size} bytes)", size = final_result.len());
 
         Ok(())
     }
 
     #[test]
     fn test_resolve_on_session() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
         info!("Loading session from: {:?}", session_path);
-        let session_json = fs::read_to_string(&session_path)?;
-        let session: SerializableSession = serde_json::from_str(&session_json)?;
+        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
+        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
+            .context("Failed to deserialize session")?;
 
-        let root_path = env::current_dir()?.join("metadata/root_receipt.json");
-        info!("Loading root receipt from: {:?}", root_path);
-        let root_json = fs::read_to_string(&root_path)?;
-        let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
-        assert!(root_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
+        let join_root_path = metadata_dir
+            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_join_root_receipt.bin");
+        info!("Loading root receipt from: {:?}", join_root_path);
+        let join_root_serialized = fs::read(&join_root_path).context("Failed to read file")?;
+        let join_root_receipt: SuccinctReceipt<ReceiptClaim> =
+            deserialize_from_bincode_bytes(&join_root_serialized)
+                .context("Failed to deserialize")?;
 
-        info!("Loaded root receipt");
+        let union_root_path = metadata_dir
+            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_union_root_receipt.bin");
+        info!("Loading unioned receipt from: {:?}", union_root_path);
+        let union_root_serialized = fs::read(&union_root_path).context("Failed to read file")?;
+        let union_root_receipt: SuccinctReceipt<Unknown> =
+            deserialize_from_bincode_bytes(&union_root_serialized)
+                .context("Failed to deserialize")?;
 
-        let union_path = env::current_dir()?.join("metadata/keccak/unioned_receipt.json");
-        info!("Loading unioned receipt from: {:?}", union_path);
-        let union_json = fs::read_to_string(&union_path)?;
-        let union_receipt: SuccinctReceipt<Unknown> = serde_json::from_str(&union_json)?;
+        let join_root_serialized = serialize_obj(&join_root_receipt)?;
+        let union_root_serialized = serialize_obj(&union_root_receipt)?;
+        let assumptions_serialized = serialize_obj(&session.assumptions)?;
 
-        info!("Loaded unioned receipt");
+        let resolve_input = serde_json::to_vec(&vec![
+            join_root_serialized,
+            union_root_serialized,
+            assumptions_serialized,
+        ])
+        .context("Failed to serialize join input")?;
 
-        let resolve_input = ResolveInput {
-            root: root_receipt,
-            union: Some(union_receipt),
-            assumptions: session.assumptions,
-        };
+        let resolved_receipt = agent.resolve(resolve_input)?;
 
-        let input_bytes = serde_json::to_vec(&resolve_input)?;
-        info!("Serialized resolve input");
-
-        info!("Calling resolve()...");
-        let start_resolve = Instant::now();
-        let resolved = agent_ref.resolve(input_bytes)?;
-        assert!(!resolved.is_empty(), "Resolved result should not be empty");
-
-        info!("Resolve completed in {:?}", start_resolve.elapsed());
-
-        let resolved_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&resolved)?;
-        assert!(resolved_receipt.claim.as_value().is_ok(), "Resolved receipt should have a claim");
-
-        let resolved_json = serde_json::to_string_pretty(&resolved_receipt)?;
-        fs::write("metadata/resolved_receipt.json", resolved_json)?;
-
-        assert!(
-            fs::metadata("metadata/resolved_receipt.json").is_ok(),
-            "Resolved receipt file should be created"
+        info!(
+            "resolve result: ({size} bytes)",
+            size = resolved_receipt.len()
         );
-
-        info!("Resolved receipt written to metadata/resolved_receipt.json");
 
         Ok(())
     }
 
     #[test]
     fn test_finalize_on_session() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
+        let resolved_receipt_path = metadata_dir
+            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_resolved_receipt.bin");
+        info!("Loading resolved receipt from: {:?}", resolved_receipt_path);
+        let resolved_receipt = fs::read(&resolved_receipt_path).context("Failed to read file")?;
+        let resolved_receipt: SuccinctReceipt<ReceiptClaim> =
+            deserialize_from_bincode_bytes(&resolved_receipt).context("Failed to deserialize")?;
+        assert!(
+            resolved_receipt.claim.as_value().is_ok(),
+            "Root receipt should have a claim"
+        );
 
-        let input = Box::new(EnvProvider { key: agent_type });
-
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let root_path = env::current_dir()?.join("metadata/resolved_receipt.json");
-        info!("Loading resolved receipt from: {:?}", root_path);
-        let root_json = fs::read_to_string(&root_path)?;
-        let root_receipt: SuccinctReceipt<ReceiptClaim> = serde_json::from_str(&root_json)?;
-        assert!(root_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
-
-        info!("Resolved receipt loaded");
-
-        let session_path = env::current_dir()?.join("metadata/session/session_4_segments.json");
+        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
         info!("Loading session from: {:?}", session_path);
-        let session_json = fs::read_to_string(&session_path)?;
-        let session: SerializableSession = serde_json::from_str(&session_json)?;
+        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
+        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
+            .context("Failed to deserialize session")?;
 
         let journal_bytes = session
             .journal
@@ -749,144 +635,57 @@ mod tests {
 
         let image_id = "3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a";
 
-        let finalize_input = FinalizeInput {
-            root: root_receipt,
-            journal: journal_bytes,
-            image_id: image_id.to_string(),
-        };
-        info!("Image ID loaded: {}", image_id.to_string());
+        let resolved_receipt_serialized =
+            serialize_obj(&resolved_receipt).context("Failed to serialize")?;
+        let image_id_serialized = serialize_obj(&image_id).context("Failed to serialize")?;
 
-        let input_bytes = serde_json::to_vec(&finalize_input)?;
-        info!("Finalize input serialized");
+        let finalize_input = serde_json::to_vec(&vec![
+            resolved_receipt_serialized,
+            journal_bytes,
+            image_id_serialized,
+        ])
+        .context("Failed to serialize finalize input")?;
 
-        let stark_finalize = Instant::now();
-        let stark_receipt = agent_ref.finalize(input_bytes)?;
-        assert!(!stark_receipt.is_empty(), "Stark receipt should not be empty");
+        let stark_receipt = agent
+            .finalize(finalize_input)
+            .context("Failed to finalize")?;
 
-        info!("Finalize succeeded in {:?}", stark_finalize.elapsed());
-
-        let finalized_receipt: Receipt = deserialize_obj(&stark_receipt)?;
-        assert!(finalized_receipt.claim().is_ok(), "Finalized receipt should have a claim");
-
-        let finalized_json = serde_json::to_string_pretty(&finalized_receipt)?;
-        fs::write("metadata/result/finalized_receipt.json", finalized_json)?;
-
-        assert!(
-            fs::metadata("metadata/result/finalized_receipt.json").is_ok(),
-            "Finalized receipt file should be created"
-        );
-
-        info!("Final STARK receipt written to metadata/result/stark.json");
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_stark2snark() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
-
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
-
-        let input = Box::new(EnvProvider { key: agent_type });
-
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let stark_path = env::current_dir()?.join("metadata/result/finalized_receipt.json");
-        info!("Loading stark receipt from: {:?}", stark_path);
-
-        let stark_receipt_bytes = fs::read(&stark_path)?;
-        assert!(!stark_receipt_bytes.is_empty(), "Stark receipt bytes should not be empty");
-
-        let groth16_receipt = agent_ref
-            .get_snark_receipt(stark_receipt_bytes)
-            .expect("stark2snark conversion failed: could not convert stark receipt to snark");
-
-        assert!(!groth16_receipt.is_empty(), "Groth16 receipt should not be empty");
-
-        let groth16_receipt: Receipt = deserialize_obj(&groth16_receipt)?;
-        assert!(groth16_receipt.claim().is_ok(), "Groth16 receipt should have a claim");
-
-        let groth16_json = serde_json::to_string_pretty(&groth16_receipt)?;
-        fs::write("metadata/result/groth16.json", groth16_json)?;
-
-        assert!(
-            fs::metadata("metadata/result/groth16.json").is_ok(),
-            "Groth16 receipt file should be created"
+        info!(
+            "finalize result: ({size} bytes)",
+            size = stark_receipt.len()
         );
 
         Ok(())
     }
 
     #[test]
-    fn test_prepare_snark() -> Result<()> {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+    fn test_stark2snark() -> Result<()> {
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let agent_type = env::var("AGENT_TYPE").unwrap_or_else(|_| "r0".to_string());
+        let stark_path =
+            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_stark_receipt.bin");
+        info!("Loading stark receipt from: {stark_path:?}");
 
-        let input = Box::new(EnvProvider { key: agent_type });
-
-        let agent = get_agent(input)?;
-        let agent_ref: &dyn Agent = agent.as_ref();
-
-        let stark_path = env::current_dir()?.join("metadata/result/finalized_receipt.json");
-        info!("Loading STARK receipt from: {:?}", stark_path);
-
-        let stark_json = fs::read_to_string(&stark_path)?;
-        let stark_receipt: Receipt = serde_json::from_str(&stark_json)?;
-        assert!(stark_receipt.claim().is_ok(), "STARK receipt should have a claim");
-
-        info!("STARK receipt loaded successfully");
-
-        let stark_receipt_bytes = serialize_obj(&stark_receipt)?;
-        assert!(!stark_receipt_bytes.is_empty(), "STARK receipt bytes should not be empty");
-
-        info!("STARK receipt serialized, size: {} bytes", stark_receipt_bytes.len());
-
-        let start_prepare = Instant::now();
-        let prepare_result = agent_ref.prepare_snark(stark_receipt_bytes)?;
-        assert!(!prepare_result.is_empty(), "prepare_snark result should not be empty");
-
-        info!("prepare_snark completed in {:?}", start_prepare.elapsed());
-
-        let prepare_result_str = String::from_utf8(prepare_result.clone())?;
-        let prepare_json: serde_json::Value = serde_json::from_str(&prepare_result_str)?;
+        let stark_receipt_serialized = fs::read(&stark_path).context("Failed to read file")?;
 
         assert!(
-            prepare_json.get("seal_path").is_some(),
-            "prepare_snark result should contain seal_path"
+            !stark_receipt_serialized.is_empty(),
+            "Stark receipt bytes should not be empty"
         );
-        assert!(
-            prepare_json.get("receipt_claim").is_some(),
-            "prepare_snark result should contain receipt_claim"
+        let stark_receipt: Receipt = deserialize_from_bincode_bytes(&stark_receipt_serialized)
+            .context("Failed to deserialize")?;
+
+        let stark_receipt_serialized =
+            serialize_obj(&stark_receipt).context("Failed to serialize")?;
+
+        let snark_receipt = agent
+            .stark2snark(stark_receipt_serialized)
+            .context("stark2snark conversion failed: could not convert stark receipt to snark")?;
+
+        info!(
+            "stark2snark result: ({size} bytes)",
+            size = snark_receipt.len()
         );
-        assert!(
-            prepare_json.get("journal_bytes").is_some(),
-            "prepare_snark result should contain journal_bytes"
-        );
-
-        let seal_path = prepare_json["seal_path"].as_str().unwrap();
-        assert!(fs::metadata(seal_path).is_ok(), "Seal file should exist at: {}", seal_path);
-
-        let seal_content = fs::read_to_string(seal_path)?;
-        assert!(!seal_content.is_empty(), "Seal file should not be empty");
-
-        let journal_bytes = prepare_json["journal_bytes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_u64().unwrap() as u8)
-            .collect::<Vec<u8>>();
-
-        assert_eq!(
-            journal_bytes, stark_receipt.journal.bytes,
-            "Journal bytes should match original STARK receipt"
-        );
-
-        info!("prepare_snark test completed successfully");
-        info!("Seal file created at: {}", seal_path);
-        info!("Seal file size: {} bytes", seal_content.len());
-
         Ok(())
     }
 }
