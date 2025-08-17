@@ -33,10 +33,8 @@ mod tests {
 
         let vk = cpu_agent.setup(elf_path_packed.clone())?;
         for i in 1..=3 {
-            let record_path = metadata_dir.join(format!(
-                "record/fibonacci-elf_shardsize_14_record_{}.bin",
-                i
-            ));
+            let record_path =
+                metadata_dir.join(format!("record/fibonacci-elf_shardsize_14_record_{}.bin", i));
             let record_path_serialized = serialize_to_msgpack_bytes(&record_path)?;
 
             let inputs: Vec<Vec<u8>> =
@@ -61,9 +59,7 @@ mod tests {
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
-        prover
-            .verify(&core_proof.proof, &vk)
-            .expect("Core proof verification failed");
+        prover.verify(&core_proof.proof, &vk).expect("Core proof verification failed");
 
         info!("Core proof verification succeeded.");
 
@@ -117,9 +113,7 @@ mod tests {
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
-        prover
-            .verify(&core_proof.proof, &vk)
-            .expect("Core proof verification failed");
+        prover.verify(&core_proof.proof, &vk).expect("Core proof verification failed");
 
         info!("Core proof verification succeeded.");
 

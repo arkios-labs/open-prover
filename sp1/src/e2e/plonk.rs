@@ -6,8 +6,8 @@ mod tests {
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use common::serialization::mpk::serialize_to_msgpack_bytes;
     use sp1_prover::{CoreSC, SP1PublicValues, SP1VerifyingKey};
-    use sp1_sdk::install::plonk_circuit_artifacts_dir;
     use sp1_sdk::SP1ProofWithPublicValues;
+    use sp1_sdk::install::plonk_circuit_artifacts_dir;
     use sp1_stark::StarkVerifyingKey;
     use std::fs;
 
@@ -26,9 +26,8 @@ mod tests {
         let inputs_packed =
             serialize_to_msgpack_bytes(&inputs).expect("Failed to serialize inputs");
 
-        let plonk_proof_vec = cpu_agent
-            .plonk(inputs_packed)
-            .expect("Failed to generate plonk proof");
+        let plonk_proof_vec =
+            cpu_agent.plonk(inputs_packed).expect("Failed to generate plonk proof");
         let plonk_proof: SP1ProofWithPublicValues =
             deserialize_from_bincode_bytes(&plonk_proof_vec).expect("Failed to deserialize proof");
 
@@ -62,9 +61,7 @@ mod tests {
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent
-            .setup(elf_path_packed)
-            .context("Failed to setup")?;
+        let vk = cpu_agent.setup(elf_path_packed).context("Failed to setup")?;
 
         let plonk_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_plonk_proof.bin");

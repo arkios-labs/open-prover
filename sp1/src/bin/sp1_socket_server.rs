@@ -10,9 +10,7 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
     let socket_base_path = env::var("SUCCINCT_SOCKET_BASE_PATH")
         .context("SUCCINCT_SOCKET_BASE_PATH environment variable is not set")?;
@@ -51,16 +49,10 @@ async fn main() -> Result<()> {
 }
 
 async fn run_server(socket_path: PathBuf, agent: Arc<Sp1Agent>) -> Result<()> {
-    let socket_name = socket_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("unknown")
-        .to_string();
+    let socket_name =
+        socket_path.file_name().and_then(|name| name.to_str()).unwrap_or("unknown").to_string();
 
-    info!(
-        "Starting server for socket: {socket_path}",
-        socket_path = socket_path.display()
-    );
+    info!("Starting server for socket: {socket_path}", socket_path = socket_path.display());
 
     let mut server =
         UnixSocketServer::new(socket_path).context("Failed to create socket server")?;
@@ -71,12 +63,12 @@ async fn run_server(socket_path: PathBuf, agent: Arc<Sp1Agent>) -> Result<()> {
     loop {
         server
             .handle_connection(|request| {
-                Ok(process_request(&agent, request)
-                    .map(TaskResponse::success)
-                    .unwrap_or_else(|e| {
+                Ok(process_request(&agent, request).map(TaskResponse::success).unwrap_or_else(
+                    |e| {
                         error!("Error processing request on {socket_name}: {e}");
                         TaskResponse::error(e)
-                    }))
+                    },
+                ))
             })
             .context("Failed to handle connection")?;
     }

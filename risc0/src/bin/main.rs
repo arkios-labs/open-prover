@@ -7,14 +7,9 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_writer(io::stderr)
-        .init();
+    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).with_writer(io::stderr).init();
 
-    let task_type: Command = env::var("TASK_TYPE")
-        .context("Missing TASK_TYPE")?
-        .parse()?;
+    let task_type: Command = env::var("TASK_TYPE").context("Missing TASK_TYPE")?.parse()?;
 
     info!("Running with TASK_TYPE={:?}", task_type);
 
@@ -24,9 +19,7 @@ async fn main() -> Result<()> {
     let mut input_bytes = Vec::new();
     stdin.read_to_end(&mut input_bytes)?;
 
-    let result_bytes = task_type
-        .apply(&agent, input_bytes)
-        .context("Failed to apply command")?;
+    let result_bytes = task_type.apply(&agent, input_bytes).context("Failed to apply command")?;
 
     let mut stdout = io::stdout();
     stdout.write_all(&result_bytes)?;

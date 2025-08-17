@@ -1,7 +1,7 @@
 use crate::serialization::{FormatDeserialize, FromBytes, FromVecBytes};
 use anyhow::Context;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 pub fn serialize_to_msgpack_bytes<T: Serialize>(item: &T) -> anyhow::Result<Vec<u8>> {
     let buf = rmp_serde::to_vec_named(item).context("failed to serialize to msgpack")?;

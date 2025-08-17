@@ -40,9 +40,7 @@ mod tests {
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
-        prover
-            .verify_wrap_bn254(&wrap_proof, &vk)
-            .expect("Wrap proof verification failed");
+        prover.verify_wrap_bn254(&wrap_proof, &vk).expect("Wrap proof verification failed");
 
         Ok(())
     }

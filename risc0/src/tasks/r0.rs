@@ -1,10 +1,10 @@
-use crate::tasks::{convert, deserialize_obj, serialize_obj, Agent, ProveKeccakRequestLocal};
-use anyhow::{bail, Context, Result};
+use crate::tasks::{Agent, ProveKeccakRequestLocal, convert, deserialize_obj, serialize_obj};
+use anyhow::{Context, Result, bail};
 use hex::FromHex;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
-    get_prover_server, Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts, ProverServer,
-    Receipt, ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext,
+    Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts, ProverServer, Receipt,
+    ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -23,10 +23,7 @@ impl RiscZeroAgent {
         let opts = ProverOpts::default().with_segment_po2_max(25);
         let prover = get_prover_server(&opts).context("Failed to initialize prover server")?;
 
-        Ok(Self {
-            prover,
-            verifier_ctx,
-        })
+        Ok(Self { prover, verifier_ctx })
     }
 }
 
@@ -46,10 +43,8 @@ impl Agent for RiscZeroAgent {
             .prove_segment(&self.verifier_ctx, &segment)
             .context("Failed to prove segment")?;
 
-        let lift_receipt = self
-            .prover
-            .lift(&segment_receipt)
-            .with_context(|| "Failed to lift".to_string())?;
+        let lift_receipt =
+            self.prover.lift(&segment_receipt).with_context(|| "Failed to lift".to_string())?;
 
         let serialized = serialize_obj(&lift_receipt).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
@@ -69,10 +64,7 @@ impl Agent for RiscZeroAgent {
             serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
 
         if receipts.len() != 2 {
-            bail!(
-                "Expected exactly two receipts for join, got {}",
-                receipts.len()
-            );
+            bail!("Expected exactly two receipts for join, got {}", receipts.len());
         }
 
         let left_receipt =
@@ -122,10 +114,7 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for union")?;
 
         if receipts.len() != 2 {
-            bail!(
-                "Expected exactly two receipts for union, got {}",
-                receipts.len()
-            );
+            bail!("Expected exactly two receipts for union, got {}", receipts.len());
         }
 
         let left_receipt =
@@ -157,10 +146,7 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for resolve")?;
 
         if inputs.len() != 3 {
-            bail!(
-                "Expected exactly three inputs for resolve, got {}",
-                inputs.len()
-            )
+            bail!("Expected exactly three inputs for resolve, got {}", inputs.len())
         }
 
         let mut root: SuccinctReceipt<ReceiptClaim> =
@@ -177,10 +163,7 @@ impl Agent for RiscZeroAgent {
 
         let assumption_receipt_map: HashMap<String, SuccinctReceipt<Unknown>> = HashMap::new();
 
-        info!(
-            "Loaded {} assumption receipts",
-            session_assumption_receipts.len()
-        );
+        info!("Loaded {} assumption receipts", session_assumption_receipts.len());
 
         let mut assumptions_len: u64 = 0;
 
@@ -215,9 +198,8 @@ impl Agent for RiscZeroAgent {
                             continue;
                         }
 
-                        let assumption_receipt = assumption_receipt_map
-                            .get(&assumption_claim)
-                            .with_context(|| {
+                        let assumption_receipt =
+                            assumption_receipt_map.get(&assumption_claim).with_context(|| {
                                 format!("Corroborating receipt not found: {}", assumption_claim)
                             })?;
 
@@ -252,10 +234,7 @@ impl Agent for RiscZeroAgent {
             .context("Failed to parse input as Vec<Vec<u8>> for finalize")?;
 
         if inputs.len() != 3 {
-            bail!(
-                "Expected exactly three inputs for finalize, got {}",
-                inputs.len()
-            )
+            bail!("Expected exactly three inputs for finalize, got {}", inputs.len())
         }
 
         let root: SuccinctReceipt<ReceiptClaim> =
@@ -267,9 +246,7 @@ impl Agent for RiscZeroAgent {
         let rollup_receipt = Receipt::new(InnerReceipt::Succinct(root), journal);
 
         let image_id = read_image_id(&*image_id)?;
-        rollup_receipt
-            .verify(image_id)
-            .context("Receipt verification failed")?;
+        rollup_receipt.verify(image_id).context("Receipt verification failed")?;
 
         let elapsed = start_time.elapsed();
         info!("Agent::finalize() took {elapsed:?}");
@@ -306,11 +283,11 @@ impl Agent for RiscZeroAgent {
 #[cfg(test)]
 mod tests {
     use crate::tasks::{
-        deserialize_obj, serialize_obj, setup_agent_and_metadata_dir, Agent, ProveKeccakRequestLocal,
-        SerializableSession,
+        Agent, ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
+        setup_agent_and_metadata_dir,
     };
     use anyhow::Context;
-    use anyhow::{anyhow, Result};
+    use anyhow::{Result, anyhow};
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
@@ -352,24 +329,16 @@ mod tests {
             );
 
             let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
-                .context(format!(
-                    "Failed to deserialize receipt for segment {current_index}"
-                ))?;
+                .context(format!("Failed to deserialize receipt for segment {current_index}"))?;
 
-            assert!(
-                lifted_receipt.claim.as_value().is_ok(),
-                "Lifted receipt should have a claim"
-            );
+            assert!(lifted_receipt.claim.as_value().is_ok(), "Lifted receipt should have a claim");
 
             all_receipts.push(lifted_receipt);
         }
 
         let receipts_serialized = serialize_to_bincode_bytes(&all_receipts)?;
 
-        info!(
-            "prove result: ({size} bytes)",
-            size = receipts_serialized.len()
-        );
+        info!("prove result: ({size} bytes)", size = receipts_serialized.len());
 
         Ok(())
     }
@@ -390,10 +359,8 @@ mod tests {
 
         info!("Loaded {receipt_count} lifted receipts");
 
-        let serialized_receipts: Vec<Vec<u8>> = lifted_receipts
-            .into_iter()
-            .map(|r| serialize_obj(&r).unwrap())
-            .collect();
+        let serialized_receipts: Vec<Vec<u8>> =
+            lifted_receipts.into_iter().map(|r| serialize_obj(&r).unwrap()).collect();
 
         let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
         let start = Instant::now();
@@ -491,10 +458,7 @@ mod tests {
 
         let receipts_serialized = serialize_to_bincode_bytes(&all_receipts)?;
 
-        info!(
-            "keccak result: ({size} bytes)",
-            size = receipts_serialized.len()
-        );
+        info!("keccak result: ({size} bytes)", size = receipts_serialized.len());
 
         Ok(())
     }
@@ -596,10 +560,7 @@ mod tests {
 
         let resolved_receipt = agent.resolve(resolve_input)?;
 
-        info!(
-            "resolve result: ({size} bytes)",
-            size = resolved_receipt.len()
-        );
+        info!("resolve result: ({size} bytes)", size = resolved_receipt.len());
 
         Ok(())
     }
@@ -614,10 +575,7 @@ mod tests {
         let resolved_receipt = fs::read(&resolved_receipt_path).context("Failed to read file")?;
         let resolved_receipt: SuccinctReceipt<ReceiptClaim> =
             deserialize_from_bincode_bytes(&resolved_receipt).context("Failed to deserialize")?;
-        assert!(
-            resolved_receipt.claim.as_value().is_ok(),
-            "Root receipt should have a claim"
-        );
+        assert!(resolved_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
 
         let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
         info!("Loading session from: {:?}", session_path);
@@ -646,14 +604,9 @@ mod tests {
         ])
         .context("Failed to serialize finalize input")?;
 
-        let stark_receipt = agent
-            .finalize(finalize_input)
-            .context("Failed to finalize")?;
+        let stark_receipt = agent.finalize(finalize_input).context("Failed to finalize")?;
 
-        info!(
-            "finalize result: ({size} bytes)",
-            size = stark_receipt.len()
-        );
+        info!("finalize result: ({size} bytes)", size = stark_receipt.len());
 
         Ok(())
     }
@@ -668,10 +621,7 @@ mod tests {
 
         let stark_receipt_serialized = fs::read(&stark_path).context("Failed to read file")?;
 
-        assert!(
-            !stark_receipt_serialized.is_empty(),
-            "Stark receipt bytes should not be empty"
-        );
+        assert!(!stark_receipt_serialized.is_empty(), "Stark receipt bytes should not be empty");
         let stark_receipt: Receipt = deserialize_from_bincode_bytes(&stark_receipt_serialized)
             .context("Failed to deserialize")?;
 
@@ -682,10 +632,7 @@ mod tests {
             .stark2snark(stark_receipt_serialized)
             .context("stark2snark conversion failed: could not convert stark receipt to snark")?;
 
-        info!(
-            "stark2snark result: ({size} bytes)",
-            size = snark_receipt.len()
-        );
+        info!("stark2snark result: ({size} bytes)", size = snark_receipt.len());
         Ok(())
     }
 }
