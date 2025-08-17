@@ -87,17 +87,15 @@ pub fn serialize_obj<T: Serialize>(item: &T) -> Result<Vec<u8>> {
 
 fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
     ProveKeccakRequest {
-        claim_digest: Digest::from(local.claim_digest),
+        claim_digest: local.claim_digest,
         po2: local.po2,
-        control_root: Digest::from(local.control_root),
+        control_root: local.control_root,
         input: local.input,
     }
 }
 
 pub fn setup_agent_and_metadata_dir() -> anyhow::Result<(PathBuf, RiscZeroAgent)> {
-    let _ = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
 
     let metadata_dir = PathBuf::from("metadata");
 

@@ -1,27 +1,28 @@
-use crate::tasks::{Agent, Sp1Agent};
+use crate::tasks::{
+    Agent, CompressInput, Groth16Input, PlonkInput, ProveInput, ProveLiftInput, SetupInput,
+    ShrinkWrapInput, Sp1Agent, VerifyCompressInput, VerifyGroth16Input, VerifyPlonkInput,
+    WrapCompressInput,
+};
 use anyhow::Context;
 use cfg_if::cfg_if;
 use common::serialization::bincode::{
-    deserialize_from_bincode_bytes, serialize_to_bincode_bytes, Bincode,
+    Bincode, deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
 };
 use common::serialization::mpk::Msgpack;
-use common::serialization::{parse_single_input, FromInputBytes};
+use common::serialization::{FromInputBytes, parse_single_input};
 use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
 use sp1_prover::{
-    CoreSC, InnerSC, OuterSC, SP1CircuitWitness, SP1PublicValues, SP1RecursionProverError,
-    SP1VerifyingKey, SP1_CIRCUIT_VERSION,
+    CoreSC, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1PublicValues,
+    SP1RecursionProverError, SP1VerifyingKey,
 };
 use sp1_recursion_circuit::machine::{SP1CompressWitnessValues, SP1RecursionWitnessValues};
 use sp1_recursion_circuit::witness::Witnessable;
 use sp1_recursion_compiler::config::InnerConfig;
 use sp1_sdk::install::try_install_circuit_artifacts;
 use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
-use sp1_stark::{
-    Challenge, MachineProver, SP1ProverOpts, StarkGenericConfig, StarkVerifyingKey, Val,
-    DIGEST_SIZE,
-};
+use sp1_stark::{Challenge, DIGEST_SIZE, MachineProver, SP1ProverOpts, StarkGenericConfig, Val};
 use std::any::Any;
 use std::fs;
 use std::slice::from_mut;
@@ -43,10 +44,7 @@ impl Sp1Agent {
         }
         let prover = Arc::new(inner_prover);
 
-        Ok(Self {
-            prover,
-            prover_opts: SP1ProverOpts::default(),
-        })
+        Ok(Self { prover, prover_opts: SP1ProverOpts::default() })
     }
 }
 
@@ -69,7 +67,7 @@ impl Agent for Sp1Agent {
         info!("Agent::setup()");
         let start_time = Instant::now();
 
-        let Msgpack(elf_path): Msgpack<String> =
+        let Msgpack(elf_path): SetupInput =
             parse_single_input(&input).context("Failed to parse input")?;
 
         let elf_bytes = fs::read(&elf_path)
@@ -89,10 +87,8 @@ impl Agent for Sp1Agent {
         info!("Agent::prove()");
         let start_time = Instant::now();
 
-        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): (
-            Msgpack<String>,
-            (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let record_bytes = fs::read(&record_path)
             .with_context(|| format!("Failed to read record file at {}", record_path))?;
@@ -116,10 +112,7 @@ impl Agent for Sp1Agent {
             shape_config.fix_shape(&mut record).unwrap();
         }
 
-        let program = self
-            .prover
-            .get_program(&elf_deserialized)
-            .expect("Failed to get program");
+        let program = self.prover.get_program(&elf_deserialized).expect("Failed to get program");
 
         let pkey = self.prover.core_prover.pk_from_vk(&program, &vk);
 
@@ -133,12 +126,8 @@ impl Agent for Sp1Agent {
         let main_data = tracing::debug_span!("commit", shard)
             .in_scope(|| self.prover.core_prover.commit(&record, traces));
 
-        let shard_proof = tracing::debug_span!("opening", shard).in_scope(|| {
-            self.prover
-                .core_prover
-                .open(&pkey, main_data, &mut challenger)
-                .unwrap()
-        });
+        let shard_proof = tracing::debug_span!("opening", shard)
+            .in_scope(|| self.prover.core_prover.open(&pkey, main_data, &mut challenger).unwrap());
 
         let serialized = serialize_to_bincode_bytes(&shard_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
@@ -151,10 +140,8 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         // Step 1: Load & process record
-        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): (
-            Msgpack<String>,
-            (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveLiftInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let record = fs::read(&record_path).context("Failed to read record file")?;
         let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&record)
@@ -167,9 +154,7 @@ impl Agent for Sp1Agent {
         );
 
         if let Some(shape_config) = &self.prover.core_shape_config {
-            shape_config
-                .fix_shape(&mut record)
-                .context("Failed to fix shape")?;
+            shape_config.fix_shape(&mut record).context("Failed to fix shape")?;
         }
         let traces = self.prover.core_prover.generate_traces(&record);
 
@@ -177,10 +162,7 @@ impl Agent for Sp1Agent {
         let elf_bytes = fs::read(&elf_path).context("Failed to read ELF file")?;
         let elf_deserialized: Vec<u8> = deserialize_from_bincode_bytes(&elf_bytes)
             .context("Failed to bincode deserialize ELF")?;
-        let program = self
-            .prover
-            .get_program(&elf_deserialized)
-            .expect("Failed to get program");
+        let program = self.prover.get_program(&elf_deserialized).expect("Failed to get program");
 
         let pk = self.prover.core_prover.pk_from_vk(&program, &vk);
         let mut challenger = self.prover.core_prover.config().challenger();
@@ -191,10 +173,7 @@ impl Agent for Sp1Agent {
             .in_scope(|| self.prover.core_prover.commit(&record, traces));
 
         let shard_proof = tracing::debug_span!("opening").in_scope(|| {
-            self.prover
-                .core_prover
-                .open(&pk, main_data, &mut challenger.clone())
-                .unwrap()
+            self.prover.core_prover.open(&pk, main_data, &mut challenger.clone()).unwrap()
         });
 
         // Step 4: Generate recursion witness
@@ -228,10 +207,7 @@ impl Agent for Sp1Agent {
                 let mut witness_stream = Vec::new();
                 let input_with_merkle = self.prover.make_merkle_proofs(input);
                 Witnessable::<InnerConfig>::write(&input_with_merkle, &mut witness_stream);
-                (
-                    self.prover.compress_program(&input_with_merkle),
-                    witness_stream,
-                )
+                (self.prover.compress_program(&input_with_merkle), witness_stream)
             }
         };
 
@@ -286,10 +262,8 @@ impl Agent for Sp1Agent {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
-        let (Bincode(left), (Bincode(right), Msgpack(is_complete))): (
-            Bincode<SP1ReduceProof<InnerSC>>,
-            (Bincode<SP1ReduceProof<InnerSC>>, Msgpack<bool>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(left), (Bincode(right), Msgpack(is_complete))): CompressInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         // Step 1: Prepare witness and program
         let compress_input = SP1CompressWitnessValues {
@@ -367,18 +341,14 @@ impl Agent for Sp1Agent {
         info!("Agent::shrink_wrap()");
         let start_time = Instant::now();
 
-        let Bincode(reduce_proof): Bincode<SP1ReduceProof<InnerSC>> =
+        let Bincode(reduce_proof): ShrinkWrapInput =
             parse_single_input(&input).context("Failed to parse input")?;
 
-        let shrink_proof = self
-            .prover
-            .shrink(reduce_proof, self.prover_opts)
-            .context("Failed to shrink")?;
+        let shrink_proof =
+            self.prover.shrink(reduce_proof, self.prover_opts).context("Failed to shrink")?;
 
-        let wrap_proof = self
-            .prover
-            .wrap_bn254(shrink_proof, self.prover_opts)
-            .context("Failed to wrap")?;
+        let wrap_proof =
+            self.prover.wrap_bn254(shrink_proof, self.prover_opts).context("Failed to wrap")?;
 
         let serialized = serialize_to_bincode_bytes(&wrap_proof).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
@@ -390,10 +360,8 @@ impl Agent for Sp1Agent {
         info!("Agent::groth16()");
         let start_time = Instant::now();
 
-        let (Msgpack(public_values_path), Bincode(wrap_proof)): (
-            Msgpack<String>,
-            Bincode<SP1ReduceProof<OuterSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(public_values_path), Bincode(wrap_proof)): Groth16Input =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
@@ -409,9 +377,7 @@ impl Agent for Sp1Agent {
             try_install_circuit_artifacts("groth16")
         };
 
-        let groth16_proof = self
-            .prover
-            .wrap_groth16_bn254(wrap_proof, &groth16_bn254_artifacts);
+        let groth16_proof = self.prover.wrap_groth16_bn254(wrap_proof, &groth16_bn254_artifacts);
 
         let groth16_proof_with_public_values: SP1ProofWithPublicValues = SP1ProofWithPublicValues {
             proof: SP1Proof::Groth16(groth16_proof),
@@ -431,10 +397,8 @@ impl Agent for Sp1Agent {
         info!("Agent::plonk()");
         let start_time = Instant::now();
 
-        let (Msgpack(public_values_path), Bincode(wrap_proof)): (
-            Msgpack<String>,
-            Bincode<SP1ReduceProof<OuterSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(public_values_path), Bincode(wrap_proof)): PlonkInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
@@ -450,9 +414,7 @@ impl Agent for Sp1Agent {
             try_install_circuit_artifacts("plonk")
         };
 
-        let plonk_proof = self
-            .prover
-            .wrap_plonk_bn254(wrap_proof, &plonk_bn254_artifacts);
+        let plonk_proof = self.prover.wrap_plonk_bn254(wrap_proof, &plonk_bn254_artifacts);
 
         let plonk_proof_with_public_values: SP1ProofWithPublicValues = SP1ProofWithPublicValues {
             proof: SP1Proof::Plonk(plonk_proof),
@@ -472,10 +434,8 @@ impl Agent for Sp1Agent {
         info!("Agent::wrap_compress()");
         let start_time = Instant::now();
 
-        let (Msgpack(public_values_path), Bincode(compress_proof)): (
-            Msgpack<String>,
-            Bincode<SP1ReduceProof<InnerSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(public_values_path), Bincode(compress_proof)): WrapCompressInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
@@ -501,10 +461,8 @@ impl Agent for Sp1Agent {
         info!("Agent::verify_compressed()");
         let start_time = Instant::now();
 
-        let (Bincode(compressed_proof), Bincode(vk)): (
-            Bincode<SP1ProofWithPublicValues>,
-            Bincode<StarkVerifyingKey<CoreSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(compressed_proof), Bincode(vk)): VerifyCompressInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let vk = SP1VerifyingKey { vk };
 
@@ -522,10 +480,7 @@ impl Agent for Sp1Agent {
         info!("Agent::verify_groth16()");
         let start_time = Instant::now();
 
-        let (Bincode(groth16_proof), (Bincode(vk), Msgpack(public_values_path))): (
-            Bincode<SP1ProofWithPublicValues>,
-            (Bincode<StarkVerifyingKey<CoreSC>>, Msgpack<String>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(groth16_proof), (Bincode(vk), Msgpack(public_values_path))): VerifyGroth16Input = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let vk = SP1VerifyingKey { vk };
 
@@ -556,10 +511,8 @@ impl Agent for Sp1Agent {
         info!("Agent::verify_plonk()");
         let start_time = Instant::now();
 
-        let (Bincode(plonk_proof), (Bincode(vk), Msgpack(public_values_path))): (
-            Bincode<SP1ProofWithPublicValues>,
-            (Bincode<StarkVerifyingKey<CoreSC>>, Msgpack<String>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(plonk_proof), (Bincode(vk), Msgpack(public_values_path))): VerifyPlonkInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let vk = SP1VerifyingKey { vk };
 

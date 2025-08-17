@@ -6,8 +6,8 @@ mod tests {
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use common::serialization::mpk::serialize_to_msgpack_bytes;
     use sp1_prover::{CoreSC, SP1PublicValues, SP1VerifyingKey};
-    use sp1_sdk::install::groth16_circuit_artifacts_dir;
     use sp1_sdk::SP1ProofWithPublicValues;
+    use sp1_sdk::install::groth16_circuit_artifacts_dir;
     use sp1_stark::StarkVerifyingKey;
     use std::fs;
 
@@ -26,9 +26,7 @@ mod tests {
         let inputs_packed =
             serialize_to_msgpack_bytes(&inputs).expect("Failed to serialize inputs");
 
-        let groth16_proof_vec = cpu_agent
-            .groth16(inputs_packed)
-            .expect("Failed to generate proof");
+        let groth16_proof_vec = cpu_agent.groth16(inputs_packed).expect("Failed to generate proof");
         let groth16_proof: SP1ProofWithPublicValues =
             deserialize_from_bincode_bytes(&groth16_proof_vec)
                 .expect("Failed to deserialize proof");
@@ -65,9 +63,7 @@ mod tests {
         let elf_path_packed =
             serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize")?;
 
-        let vk = cpu_agent
-            .setup(elf_path_packed)
-            .context("Failed to setup")?;
+        let vk = cpu_agent.setup(elf_path_packed).context("Failed to setup")?;
 
         let groth16_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_groth16_proof.bin");
@@ -82,9 +78,8 @@ mod tests {
         let verify_inputs_packed =
             serialize_to_msgpack_bytes(&verify_inputs).context("Failed to serialize")?;
 
-        let verify_result = cpu_agent
-            .verify_groth16(verify_inputs_packed)
-            .context("Failed to verify")?;
+        let verify_result =
+            cpu_agent.verify_groth16(verify_inputs_packed).context("Failed to verify")?;
         let verify_success: bool =
             deserialize_from_bincode_bytes(&verify_result).context("Failed to deserialize")?;
         assert!(verify_success, "Groth16 proof verification should succeed");

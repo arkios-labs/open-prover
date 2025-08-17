@@ -1,4 +1,4 @@
-use crate::serialization::{recv, send, Format};
+use crate::serialization::{Format, recv, send};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -36,19 +36,11 @@ pub struct UnixSocketServer {
 
 impl TaskResponse {
     pub fn success(data: Vec<u8>) -> Self {
-        Self {
-            success: true,
-            data: ByteBuf::from(data),
-            error: None,
-        }
+        Self { success: true, data: ByteBuf::from(data), error: None }
     }
 
     pub fn error<E: ToString>(err: E) -> Self {
-        Self {
-            success: false,
-            data: ByteBuf::from(vec![]),
-            error: Some(err.to_string()),
-        }
+        Self { success: false, data: ByteBuf::from(vec![]), error: Some(err.to_string()) }
     }
 }
 
@@ -59,10 +51,7 @@ impl UnixSocketServer {
             std::fs::remove_file(&socket_path).context("Failed to remove existing socket file")?;
         }
 
-        Ok(Self {
-            socket_path,
-            listener: None,
-        })
+        Ok(Self { socket_path, listener: None })
     }
 
     pub fn bind(&mut self) -> Result<()> {
@@ -104,11 +93,7 @@ impl UnixSocketServer {
             let response = handler(request).unwrap_or_else(|err| {
                 let msg = err.to_string();
                 error!("Handler error: {msg}");
-                TaskResponse {
-                    success: false,
-                    data: Vec::new().into(),
-                    error: Some(msg),
-                }
+                TaskResponse { success: false, data: Vec::new().into(), error: Some(msg) }
             });
 
             info!(
@@ -135,19 +120,14 @@ pub struct UnixSocketClient {
 
 impl UnixSocketClient {
     pub fn new(socket_path: impl Into<PathBuf>) -> Self {
-        Self {
-            socket_path: socket_path.into(),
-        }
+        Self { socket_path: socket_path.into() }
     }
 
     pub fn connect(&self) -> Result<UnixStream> {
         let stream =
             UnixStream::connect(&self.socket_path).context("Failed to connect to Unix socket")?;
 
-        info!(
-            "Connected to Unix socket: {socket_path}",
-            socket_path = self.socket_path.display()
-        );
+        info!("Connected to Unix socket: {socket_path}", socket_path = self.socket_path.display());
         Ok(stream)
     }
 }
@@ -173,10 +153,8 @@ mod tests {
         let client_thread = thread::spawn(move || {
             thread::sleep(Duration::from_millis(100));
 
-            let request = TaskRequest {
-                task_type: "echo".to_string(),
-                data: vec![1, 2, 3, 4].into(),
-            };
+            let request =
+                TaskRequest { task_type: "echo".to_string(), data: vec![1, 2, 3, 4].into() };
 
             let mut stream = client.connect().expect("Failed to connect to Unix socket");
             send(&mut stream, &request, Format::Msgpack).expect("Failed to send request");
@@ -214,10 +192,8 @@ mod tests {
         let client_thread = thread::spawn(move || {
             thread::sleep(Duration::from_millis(100));
 
-            let request = TaskRequest {
-                task_type: "invalid_task".to_string(),
-                data: vec![1, 2, 3].into(),
-            };
+            let request =
+                TaskRequest { task_type: "invalid_task".to_string(), data: vec![1, 2, 3].into() };
 
             let mut stream = client.connect().expect("Failed to connect to Unix socket");
             send(&mut stream, &request, Format::Msgpack).expect("Failed to send request");

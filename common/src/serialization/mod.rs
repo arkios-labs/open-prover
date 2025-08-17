@@ -1,6 +1,6 @@
 use crate::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
 use crate::serialization::mpk::{deserialize_from_msgpack_bytes, serialize_to_msgpack_bytes};
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use std::io::{Read, Write};
 
 pub mod bincode;
@@ -39,9 +39,7 @@ pub fn recv<R: Read, T: serde::de::DeserializeOwned>(
     }
 
     let mut buf = vec![0u8; size];
-    reader
-        .read_exact(&mut buf)
-        .context("Failed to read payload")?;
+    reader.read_exact(&mut buf).context("Failed to read payload")?;
 
     let value = match format {
         Format::Msgpack => deserialize_from_msgpack_bytes(&buf),
@@ -69,12 +67,8 @@ pub fn send<W: Write, T: serde::Serialize>(
         bail!("Payload size too large: {size} bytes");
     }
 
-    writer
-        .write_all(&size.to_le_bytes())
-        .context("Failed to write size header")?;
-    writer
-        .write_all(&data)
-        .context("Failed to write serialized payload")?;
+    writer.write_all(&size.to_le_bytes()).context("Failed to write size header")?;
+    writer.write_all(&data).context("Failed to write serialized payload")?;
     writer.flush().context("Failed to flush writer")?;
 
     Ok(())
@@ -169,11 +163,7 @@ mod tests {
     }
 
     fn run_roundtrip_test(format: Format) {
-        let original = TestData {
-            id: 42,
-            name: "hello".to_string(),
-            active: true,
-        };
+        let original = TestData { id: 42, name: "hello".to_string(), active: true };
 
         let mut buffer = Cursor::new(Vec::new());
         send(&mut buffer, &original, format).expect("send failed");
@@ -218,10 +208,7 @@ mod tests {
 
     #[test]
     fn test_parse_input_msgpack_and_bincode() {
-        let data = SerializationTestData {
-            id: 7,
-            name: "sp1".to_string(),
-        };
+        let data = SerializationTestData { id: 7, name: "sp1".to_string() };
 
         let msgpack_bytes = serialize_to_msgpack_bytes(&data).unwrap();
         let Msgpack(parsed): Msgpack<SerializationTestData> =
@@ -236,10 +223,7 @@ mod tests {
 
     #[test]
     fn test_from_vec_bytes_single() {
-        let val = SerializationTestData {
-            id: 1,
-            name: "msgpack".into(),
-        };
+        let val = SerializationTestData { id: 1, name: "msgpack".into() };
 
         let msgpack_bytes = serialize_to_msgpack_bytes(&val).unwrap();
         let wrapper =
@@ -254,14 +238,8 @@ mod tests {
 
     #[test]
     fn test_from_vec_bytes_tuple() {
-        let val1 = SerializationTestData {
-            id: 11,
-            name: "a".into(),
-        };
-        let val2 = SerializationTestData {
-            id: 22,
-            name: "b".into(),
-        };
+        let val1 = SerializationTestData { id: 11, name: "a".into() };
+        let val2 = SerializationTestData { id: 22, name: "b".into() };
 
         let a = serialize_to_msgpack_bytes(&val1).unwrap();
         let b = serialize_to_bincode_bytes(&val2).unwrap();
@@ -278,14 +256,8 @@ mod tests {
 
     #[test]
     fn test_from_input_bytes_nested_tuple() {
-        let val1 = SerializationTestData {
-            id: 100,
-            name: "left".into(),
-        };
-        let val2 = SerializationTestData {
-            id: 200,
-            name: "right".into(),
-        };
+        let val1 = SerializationTestData { id: 100, name: "left".into() };
+        let val2 = SerializationTestData { id: 200, name: "right".into() };
         let flag = true;
 
         let chunk1 = serialize_to_bincode_bytes(&val1).unwrap();

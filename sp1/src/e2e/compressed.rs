@@ -2,7 +2,7 @@
 mod tests {
     use crate::e2e::tests::setup_agent_and_metadata_dir;
     use crate::tasks::Agent;
-    use anyhow::{anyhow, Context};
+    use anyhow::{Context, anyhow};
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use common::serialization::mpk::serialize_to_msgpack_bytes;
     use sp1_core_executor::SP1ReduceProof;
@@ -26,10 +26,8 @@ mod tests {
         let mut lifted_proofs = Vec::new();
 
         for i in 1..=3 {
-            let record_path = metadata_dir.join(format!(
-                "record/fibonacci-elf_shardsize_14_record_{}.bin",
-                i
-            ));
+            let record_path =
+                metadata_dir.join(format!("record/fibonacci-elf_shardsize_14_record_{}.bin", i));
             let record_path_packed = serialize_to_msgpack_bytes(&record_path)?;
             let vk_clone = vk.clone();
 
@@ -58,12 +56,7 @@ mod tests {
                 let left = &current_proofs[i];
                 let right = &current_proofs[i + 1];
 
-                info!(
-                    "Compressing pair [{}, {}] at height {}",
-                    i,
-                    i + 1,
-                    current_height
-                );
+                info!("Compressing pair [{}, {}] at height {}", i, i + 1, current_height);
 
                 let is_complete_bool = current_proofs.len() == 2 && i + 2 >= current_proofs.len();
                 let is_complete_packed = serialize_to_msgpack_bytes(&is_complete_bool)?;
@@ -84,16 +77,11 @@ mod tests {
             current_proofs = next_level;
             current_height += 1;
 
-            info!(
-                "Reduced to {} proofs at height {}",
-                current_proofs.len(),
-                current_height
-            );
+            info!("Reduced to {} proofs at height {}", current_proofs.len(), current_height);
         }
 
-        let final_proof_vec = current_proofs
-            .pop()
-            .ok_or_else(|| anyhow!("No final proof generated"))?;
+        let final_proof_vec =
+            current_proofs.pop().ok_or_else(|| anyhow!("No final proof generated"))?;
 
         let final_proof: SP1ReduceProof<InnerSC> =
             deserialize_from_bincode_bytes(&final_proof_vec)?;
@@ -101,9 +89,7 @@ mod tests {
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
-        prover
-            .verify_compressed(&final_proof, &vk)
-            .expect("Compressed proof verification failed");
+        prover.verify_compressed(&final_proof, &vk).expect("Compressed proof verification failed");
 
         Ok(())
     }
@@ -136,9 +122,7 @@ mod tests {
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent
-            .setup(elf_path_packed)
-            .context("Failed to setup")?;
+        let vk = cpu_agent.setup(elf_path_packed).context("Failed to setup")?;
 
         let compressed_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin");
@@ -150,10 +134,7 @@ mod tests {
 
         let verify_result = cpu_agent.verify_compress(verify_inputs_packed)?;
         let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)?;
-        assert!(
-            verify_success,
-            "Compressed proof verification should succeed"
-        );
+        assert!(verify_success, "Compressed proof verification should succeed");
 
         Ok(())
     }

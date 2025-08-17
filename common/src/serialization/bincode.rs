@@ -1,6 +1,6 @@
 use crate::serialization::{FormatDeserialize, FromBytes, FromVecBytes};
 use anyhow::Result;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 pub fn serialize_to_bincode_bytes<T: Serialize>(item: &T) -> Result<Vec<u8>> {
     let encoded = bincode::serialize(item)?;
