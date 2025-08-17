@@ -5,7 +5,6 @@ use sp1::tasks::Sp1Agent;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio;
 use tracing::{error, info};
 
 #[tokio::main]
