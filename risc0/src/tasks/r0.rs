@@ -245,7 +245,7 @@ impl Agent for RiscZeroAgent {
 
         let rollup_receipt = Receipt::new(InnerReceipt::Succinct(root), journal);
 
-        let image_id = read_image_id(&*image_id)?;
+        let image_id = read_image_id(&image_id)?;
         rollup_receipt.verify(image_id).context("Receipt verification failed")?;
 
         let elapsed = start_time.elapsed();
