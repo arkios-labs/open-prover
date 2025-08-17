@@ -1,4 +1,8 @@
-use crate::tasks::{Agent, Sp1Agent};
+use crate::tasks::{
+    Agent, CompressInput, Groth16Input, PlonkInput, ProveInput, ProveLiftInput, SetupInput,
+    ShrinkWrapInput, Sp1Agent, VerifyCompressInput, VerifyGroth16Input, VerifyPlonkInput,
+    WrapCompressInput,
+};
 use anyhow::Context;
 use cfg_if::cfg_if;
 use common::serialization::bincode::{
@@ -10,7 +14,7 @@ use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
 use sp1_prover::{
-    CoreSC, InnerSC, OuterSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1PublicValues,
+    CoreSC, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1PublicValues,
     SP1RecursionProverError, SP1VerifyingKey,
 };
 use sp1_recursion_circuit::machine::{SP1CompressWitnessValues, SP1RecursionWitnessValues};
@@ -18,10 +22,7 @@ use sp1_recursion_circuit::witness::Witnessable;
 use sp1_recursion_compiler::config::InnerConfig;
 use sp1_sdk::install::try_install_circuit_artifacts;
 use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
-use sp1_stark::{
-    Challenge, DIGEST_SIZE, MachineProver, SP1ProverOpts, StarkGenericConfig, StarkVerifyingKey,
-    Val,
-};
+use sp1_stark::{Challenge, DIGEST_SIZE, MachineProver, SP1ProverOpts, StarkGenericConfig, Val};
 use std::any::Any;
 use std::fs;
 use std::slice::from_mut;
@@ -66,7 +67,7 @@ impl Agent for Sp1Agent {
         info!("Agent::setup()");
         let start_time = Instant::now();
 
-        let Msgpack(elf_path): Msgpack<String> =
+        let Msgpack(elf_path): SetupInput =
             parse_single_input(&input).context("Failed to parse input")?;
 
         let elf_bytes = fs::read(&elf_path)
@@ -86,10 +87,8 @@ impl Agent for Sp1Agent {
         info!("Agent::prove()");
         let start_time = Instant::now();
 
-        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): (
-            Msgpack<String>,
-            (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let record_bytes = fs::read(&record_path)
             .with_context(|| format!("Failed to read record file at {}", record_path))?;
@@ -141,10 +140,8 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         // Step 1: Load & process record
-        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): (
-            Msgpack<String>,
-            (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveLiftInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let record = fs::read(&record_path).context("Failed to read record file")?;
         let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&record)
@@ -265,10 +262,8 @@ impl Agent for Sp1Agent {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
-        let (Bincode(left), (Bincode(right), Msgpack(is_complete))): (
-            Bincode<SP1ReduceProof<InnerSC>>,
-            (Bincode<SP1ReduceProof<InnerSC>>, Msgpack<bool>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(left), (Bincode(right), Msgpack(is_complete))): CompressInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         // Step 1: Prepare witness and program
         let compress_input = SP1CompressWitnessValues {
@@ -346,7 +341,7 @@ impl Agent for Sp1Agent {
         info!("Agent::shrink_wrap()");
         let start_time = Instant::now();
 
-        let Bincode(reduce_proof): Bincode<SP1ReduceProof<InnerSC>> =
+        let Bincode(reduce_proof): ShrinkWrapInput =
             parse_single_input(&input).context("Failed to parse input")?;
 
         let shrink_proof =
@@ -365,10 +360,8 @@ impl Agent for Sp1Agent {
         info!("Agent::groth16()");
         let start_time = Instant::now();
 
-        let (Msgpack(public_values_path), Bincode(wrap_proof)): (
-            Msgpack<String>,
-            Bincode<SP1ReduceProof<OuterSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(public_values_path), Bincode(wrap_proof)): Groth16Input =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
@@ -404,10 +397,8 @@ impl Agent for Sp1Agent {
         info!("Agent::plonk()");
         let start_time = Instant::now();
 
-        let (Msgpack(public_values_path), Bincode(wrap_proof)): (
-            Msgpack<String>,
-            Bincode<SP1ReduceProof<OuterSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(public_values_path), Bincode(wrap_proof)): PlonkInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
@@ -443,10 +434,8 @@ impl Agent for Sp1Agent {
         info!("Agent::wrap_compress()");
         let start_time = Instant::now();
 
-        let (Msgpack(public_values_path), Bincode(compress_proof)): (
-            Msgpack<String>,
-            Bincode<SP1ReduceProof<InnerSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Msgpack(public_values_path), Bincode(compress_proof)): WrapCompressInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
@@ -472,10 +461,8 @@ impl Agent for Sp1Agent {
         info!("Agent::verify_compressed()");
         let start_time = Instant::now();
 
-        let (Bincode(compressed_proof), Bincode(vk)): (
-            Bincode<SP1ProofWithPublicValues>,
-            Bincode<StarkVerifyingKey<CoreSC>>,
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(compressed_proof), Bincode(vk)): VerifyCompressInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let vk = SP1VerifyingKey { vk };
 
@@ -493,10 +480,7 @@ impl Agent for Sp1Agent {
         info!("Agent::verify_groth16()");
         let start_time = Instant::now();
 
-        let (Bincode(groth16_proof), (Bincode(vk), Msgpack(public_values_path))): (
-            Bincode<SP1ProofWithPublicValues>,
-            (Bincode<StarkVerifyingKey<CoreSC>>, Msgpack<String>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(groth16_proof), (Bincode(vk), Msgpack(public_values_path))): VerifyGroth16Input = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let vk = SP1VerifyingKey { vk };
 
@@ -527,10 +511,8 @@ impl Agent for Sp1Agent {
         info!("Agent::verify_plonk()");
         let start_time = Instant::now();
 
-        let (Bincode(plonk_proof), (Bincode(vk), Msgpack(public_values_path))): (
-            Bincode<SP1ProofWithPublicValues>,
-            (Bincode<StarkVerifyingKey<CoreSC>>, Msgpack<String>),
-        ) = FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+        let (Bincode(plonk_proof), (Bincode(vk), Msgpack(public_values_path))): VerifyPlonkInput =
+            FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let vk = SP1VerifyingKey { vk };
 
