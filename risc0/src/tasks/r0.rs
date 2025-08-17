@@ -167,51 +167,48 @@ impl Agent for RiscZeroAgent {
 
         let mut assumptions_len: u64 = 0;
 
-        if root.claim.clone().as_value()?.output.is_some() {
-            if let Some(guest_output) = root.claim.clone().as_value()?.output.as_value()? {
-                if !guest_output.assumptions.is_empty() {
-                    let assumptions_list = guest_output
-                        .assumptions
-                        .as_value()
-                        .context("Failed to unwrap assumptions of guest output")?;
+        if root.claim.clone().as_value()?.output.is_some()
+            && let Some(guest_output) = root.claim.clone().as_value()?.output.as_value()?
+            && !guest_output.assumptions.is_empty()
+        {
+            let assumptions_list = guest_output
+                .assumptions
+                .as_value()
+                .context("Failed to unwrap assumptions of guest output")?;
 
-                    assumptions_len = assumptions_list
-                        .len()
-                        .try_into()
-                        .context("Failed to convert assumption length")?;
+            assumptions_len =
+                assumptions_list.len().try_into().context("Failed to convert assumption length")?;
 
-                    let mut union_claim = String::new();
-                    if let Some(union_receipt) = union {
-                        union_claim = union_receipt.claim.digest().to_string();
-                        info!("Resolving union claim digest: {union_claim}");
+            let mut union_claim = String::new();
+            if let Some(union_receipt) = union {
+                union_claim = union_receipt.claim.digest().to_string();
+                info!("Resolving union claim digest: {union_claim}");
 
-                        root = self
-                            .prover
-                            .resolve(&root, &union_receipt)
-                            .context("Failed to resolve union receipt")?;
-                    }
-
-                    for assumption in &assumptions_list.0 {
-                        let assumption_claim = assumption.as_value()?.claim.to_string();
-                        if assumption_claim == union_claim {
-                            info!("Skipping already resolved union claim: {union_claim}");
-                            continue;
-                        }
-
-                        let assumption_receipt =
-                            assumption_receipt_map.get(&assumption_claim).with_context(|| {
-                                format!("Corroborating receipt not found: {}", assumption_claim)
-                            })?;
-
-                        root = self
-                            .prover
-                            .resolve(&root, assumption_receipt)
-                            .context("Failed to resolve assumption receipt")?;
-                    }
-
-                    info!("Resolve complete");
-                }
+                root = self
+                    .prover
+                    .resolve(&root, &union_receipt)
+                    .context("Failed to resolve union receipt")?;
             }
+
+            for assumption in &assumptions_list.0 {
+                let assumption_claim = assumption.as_value()?.claim.to_string();
+                if assumption_claim == union_claim {
+                    info!("Skipping already resolved union claim: {union_claim}");
+                    continue;
+                }
+
+                let assumption_receipt =
+                    assumption_receipt_map.get(&assumption_claim).with_context(|| {
+                        format!("Corroborating receipt not found: {}", assumption_claim)
+                    })?;
+
+                root = self
+                    .prover
+                    .resolve(&root, assumption_receipt)
+                    .context("Failed to resolve assumption receipt")?;
+            }
+
+            info!("Resolve complete");
         }
 
         info!("Resolve operation completed successfully: {assumptions_len}");
