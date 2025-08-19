@@ -1,0 +1,48 @@
+name: CI
+
+permissions: read-all
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit-style:
+    runs-on: [ self-hosted, zkrabbit-prover ]
+    steps:
+      - name: Checkout zkrabbit-prover
+        uses: actions/checkout@v4
+
+      - name: Check format
+        run: cargo fmt -- --check
+
+      - name: Check clippy
+        run: cargo clippy -- -D warnings
+
+  build-and-test-gpu:
+    runs-on: [ self-hosted, zkrabbit-prover ]
+    steps:
+      - name: Checkout zkrabbit-prover
+        uses: actions/checkout@v4
+
+      # RISC0 SNARK conversion uses Docker internally.
+      # Make sure the runner user has docker access.
+      - name: Sanity check docker access
+        run: |
+          docker version --format 'Client={{.Client.Version}} Server={{.Server.Version}}'
+
+      - name: Run GPU build
+        run: cargo build --release --features=gpu --locked
+
+      # Restricting tests to a single thread to avoid invalid memory errors.
+      - name: Run GPU test
+        run: cargo test --release --features=gpu --locked -- --nocapture --test-threads=1

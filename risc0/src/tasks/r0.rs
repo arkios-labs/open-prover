@@ -289,7 +289,7 @@ mod tests {
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
     use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
-    use std::{collections::VecDeque, fs, time::Instant};
+    use std::{collections::VecDeque, fs};
     use tracing::info;
 
     #[test]
@@ -307,7 +307,6 @@ mod tests {
 
         info!("Found {segment_count} segments. Starting proof generation...",);
         let mut all_receipts = Vec::with_capacity(segment_count);
-        let start = Instant::now();
 
         for (i, segment) in session.segments.iter().enumerate() {
             let current_index = i + 1;
@@ -360,7 +359,6 @@ mod tests {
             lifted_receipts.into_iter().map(|r| serialize_obj(&r).unwrap()).collect();
 
         let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
-        let start = Instant::now();
 
         while queue.len() > 1 {
             let mut next_level: VecDeque<Vec<u8>> = VecDeque::with_capacity((queue.len() + 1) / 2);
@@ -409,7 +407,6 @@ mod tests {
         info!("Found {keccak_count} pending keccak inputs");
 
         let mut all_receipts = Vec::with_capacity(keccak_count);
-        let start = Instant::now();
 
         for (i, keccak_req) in session.pending_keccaks.iter().enumerate() {
             let current_index = i + 1;
@@ -464,8 +461,8 @@ mod tests {
     fn test_union_on_keccaks_tree() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let keccak_receipt_path = metadata_dir
-            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_kecccak_receipt.bin");
+        let keccak_receipt_path =
+            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_keccak_receipt.bin");
         info!("Loading keccak receipts from: {:?}", keccak_receipt_path);
 
         let keccak_receipt_serialized =
@@ -484,8 +481,6 @@ mod tests {
             .collect::<Result<_, _>>()?;
 
         let mut queue: VecDeque<Vec<u8>> = VecDeque::from(keccak_receipts_serialized.clone());
-
-        let start = Instant::now();
 
         while queue.len() > 1 {
             let mut next_level: VecDeque<Vec<u8>> = VecDeque::with_capacity((queue.len() + 1) / 2);
@@ -608,6 +603,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[test]
     fn test_stark2snark() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
