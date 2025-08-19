@@ -16,8 +16,8 @@ sp1-sdk = { version = "5.2.1" }
 sp1-stark = { version = "5.2.1" }
 
 # moongate
-moongate-prover = { git = "https://github.com/succinctlabs/moongate", rev = "ef5b821ccd0bfc723d952506faf66dd5b4ca2e45", optional = true }
-moongate-core = { git = "https://github.com/succinctlabs/moongate", rev = "ef5b821ccd0bfc723d952506faf66dd5b4ca2e45", optional = true }
+moongate-prover = { git = "ssh://git@github.com/succinctlabs/moongate", rev = "ef5b821ccd0bfc723d952506faf66dd5b4ca2e45", optional = true }
+moongate-core = { git = "ssh://git@github.com/succinctlabs/moongate", rev = "ef5b821ccd0bfc723d952506faf66dd5b4ca2e45", optional = true }
 
 # p3
 p3-field = { version = "=0.2.3-succinct" }

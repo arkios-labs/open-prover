@@ -59,7 +59,7 @@ dependencies = [
 [[package]]
 name = "air"
 version = "0.1.0"
-source = "git+https://github.com/succinctlabs/moongate?rev=ef5b821ccd0bfc723d952506faf66dd5b4ca2e45#ef5b821ccd0bfc723d952506faf66dd5b4ca2e45"
+source = "git+ssh://git@github.com/succinctlabs/moongate?rev=ef5b821ccd0bfc723d952506faf66dd5b4ca2e45#ef5b821ccd0bfc723d952506faf66dd5b4ca2e45"
 dependencies = [
  "lazy_static",
  "p3-air",
@@ -4254,7 +4254,7 @@ dependencies = [
 [[package]]
 name = "moongate-core"
 version = "0.1.0"
-source = "git+https://github.com/succinctlabs/moongate?rev=ef5b821ccd0bfc723d952506faf66dd5b4ca2e45#ef5b821ccd0bfc723d952506faf66dd5b4ca2e45"
+source = "git+ssh://git@github.com/succinctlabs/moongate?rev=ef5b821ccd0bfc723d952506faf66dd5b4ca2e45#ef5b821ccd0bfc723d952506faf66dd5b4ca2e45"
 dependencies = [
  "air",
  "bincode",
@@ -4299,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "moongate-prover"
 version = "0.1.0"
-source = "git+https://github.com/succinctlabs/moongate?rev=ef5b821ccd0bfc723d952506faf66dd5b4ca2e45#ef5b821ccd0bfc723d952506faf66dd5b4ca2e45"
+source = "git+ssh://git@github.com/succinctlabs/moongate?rev=ef5b821ccd0bfc723d952506faf66dd5b4ca2e45#ef5b821ccd0bfc723d952506faf66dd5b4ca2e45"
 dependencies = [
  "bincode",
  "clap",
