@@ -461,8 +461,8 @@ mod tests {
     fn test_union_on_keccaks_tree() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let keccak_receipt_path = metadata_dir
-            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_kecccak_receipt.bin");
+        let keccak_receipt_path =
+            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_keccak_receipt.bin");
         info!("Loading keccak receipts from: {:?}", keccak_receipt_path);
 
         let keccak_receipt_serialized =
