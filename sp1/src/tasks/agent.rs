@@ -10,6 +10,7 @@ use common::serialization::bincode::{
 };
 use common::serialization::mpk::Msgpack;
 use common::serialization::{FromInputBytes, parse_single_input};
+use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
@@ -20,10 +21,13 @@ use sp1_prover::{
 use sp1_recursion_circuit::machine::{SP1CompressWitnessValues, SP1RecursionWitnessValues};
 use sp1_recursion_circuit::witness::Witnessable;
 use sp1_recursion_compiler::config::InnerConfig;
+use sp1_recursion_core::air::RecursionPublicValues;
 use sp1_sdk::install::try_install_circuit_artifacts;
 use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
+use sp1_stark::septic_digest::SepticDigest;
 use sp1_stark::{Challenge, DIGEST_SIZE, MachineProver, SP1ProverOpts, StarkGenericConfig, Val};
 use std::any::Any;
+use std::borrow::Borrow;
 use std::fs;
 use std::slice::from_mut;
 use std::sync::Arc;
@@ -262,8 +266,24 @@ impl Agent for Sp1Agent {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
-        let (Bincode(left), (Bincode(right), Msgpack(is_complete))): CompressInput =
+        // TODO: We don’t need to pass 'is_complete' as an argument,
+        //       since it can be derived directly from the proofs.
+        let (Bincode(left), (Bincode(right), Msgpack(_is_complete))): CompressInput =
             FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
+
+        let first_pv: &RecursionPublicValues<BabyBear> =
+            left.proof.public_values.as_slice().borrow();
+        let last_pv: &RecursionPublicValues<BabyBear> =
+            right.proof.public_values.as_slice().borrow();
+
+        let zero_sum = [first_pv.global_cumulative_sum, last_pv.global_cumulative_sum]
+            .into_iter()
+            .sum::<SepticDigest<BabyBear>>()
+            .is_zero();
+        let is_complete = first_pv.start_shard == BabyBear::one()
+            && last_pv.next_pc == BabyBear::zero()
+            && first_pv.start_reconstruct_deferred_digest == [BabyBear::zero(); DIGEST_SIZE]
+            && zero_sum;
 
         // Step 1: Prepare witness and program
         let compress_input = SP1CompressWitnessValues {

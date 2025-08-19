@@ -6745,6 +6745,7 @@ name = "sp1"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "cfg-if",
  "common",
  "moongate-core",
