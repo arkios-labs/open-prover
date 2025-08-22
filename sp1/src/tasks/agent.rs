@@ -182,7 +182,10 @@ impl Agent for Sp1Agent {
 
         // Step 4: Generate recursion witness
         let is_first_shard = record.public_values.shard == 1;
-        let is_complete = false;
+        let has_no_next_record = record.public_values.next_pc == 0;
+
+        // The proof request is complete if it consists of only this single record.
+        let is_complete = is_first_shard && has_no_next_record;
         let deferred_digest = [Val::<CoreSC>::zero(); DIGEST_SIZE];
 
         let recursion_witness = SP1RecursionWitnessValues {
