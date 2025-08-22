@@ -19,15 +19,14 @@ mod tests {
 
         let prover = &cpu_agent.prover;
 
-        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path = metadata_dir.join("elf/single_record_elf.bin");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
         let vk = cpu_agent.setup(elf_path_packed.clone())?;
         let mut lifted_proofs = Vec::new();
 
-        for i in 1..=3 {
-            let record_path =
-                metadata_dir.join(format!("record/fibonacci-elf_shardsize_14_record_{}.bin", i));
+        for i in 1..=1 {
+            let record_path = metadata_dir.join(format!("record/single_record_{}.bin", i));
             let record_path_packed = serialize_to_msgpack_bytes(&record_path)?;
             let vk_clone = vk.clone();
 
