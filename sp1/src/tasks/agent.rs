@@ -269,9 +269,7 @@ impl Agent for Sp1Agent {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
-        // TODO: We don’t need to pass 'is_complete' as an argument,
-        //       since it can be derived directly from the proofs.
-        let (Bincode(left), (Bincode(right), Msgpack(_is_complete))): CompressInput =
+        let (Bincode(left), Bincode(right)): CompressInput =
             FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let first_pv: &RecursionPublicValues<BabyBear> =

@@ -24,18 +24,14 @@ mod tests {
         while proofs.len() > 1 {
             info!("Compressing {} proofs at height {}", proofs.len(), height);
             next.clear();
-            let is_complete = proofs.len() == 2;
 
             {
                 let mut iter = proofs.drain(..);
 
                 while let Some(left) = iter.next() {
                     if let Some(right) = iter.next() {
-                        let is_complete_packed =
-                            serialize_to_msgpack_bytes(&is_complete).context("Failed to pack")?;
-                        let inputs =
-                            serialize_to_msgpack_bytes(&[&left, &right, &is_complete_packed])
-                                .context("Failed to pack")?;
+                        let inputs = serialize_to_msgpack_bytes(&[&left, &right])
+                            .context("Failed to pack")?;
                         let out = agent.compress(inputs).context("Failed to compress")?;
                         next.push(out);
                     } else {

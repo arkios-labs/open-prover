@@ -41,8 +41,7 @@ type ProveInput = (Msgpack<String>, (Msgpack<String>, Bincode<StarkVerifyingKey<
 
 type ProveLiftInput = (Msgpack<String>, (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>));
 
-type CompressInput =
-    (Bincode<SP1ReduceProof<InnerSC>>, (Bincode<SP1ReduceProof<InnerSC>>, Msgpack<bool>));
+type CompressInput = (Bincode<SP1ReduceProof<InnerSC>>, Bincode<SP1ReduceProof<InnerSC>>);
 
 type ShrinkWrapInput = Bincode<SP1ReduceProof<InnerSC>>;
 
