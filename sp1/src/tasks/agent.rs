@@ -182,7 +182,10 @@ impl Agent for Sp1Agent {
 
         // Step 4: Generate recursion witness
         let is_first_shard = record.public_values.shard == 1;
-        let is_complete = false;
+        let has_no_next_record = record.public_values.next_pc == 0;
+
+        // The proof request is complete if it consists of only this single record.
+        let is_complete = is_first_shard && has_no_next_record;
         let deferred_digest = [Val::<CoreSC>::zero(); DIGEST_SIZE];
 
         let recursion_witness = SP1RecursionWitnessValues {
@@ -266,9 +269,7 @@ impl Agent for Sp1Agent {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
-        // TODO: We don’t need to pass 'is_complete' as an argument,
-        //       since it can be derived directly from the proofs.
-        let (Bincode(left), (Bincode(right), Msgpack(_is_complete))): CompressInput =
+        let (Bincode(left), Bincode(right)): CompressInput =
             FromInputBytes::from_input_bytes(&input).context("Failed to parse input")?;
 
         let first_pv: &RecursionPublicValues<BabyBear> =

@@ -5,92 +5,114 @@ mod tests {
     use anyhow::{Context, anyhow};
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use common::serialization::mpk::serialize_to_msgpack_bytes;
-    use sp1_core_executor::SP1ReduceProof;
-    use sp1_prover::InnerSC;
-    use sp1_prover::{CoreSC, SP1VerifyingKey};
-    use sp1_stark::StarkVerifyingKey;
     use std::fs;
+    use std::path::{Path, PathBuf};
     use tracing::info;
 
+    struct E2eCase<'a> {
+        elf_path: &'a str,
+        record_glob_fmt: &'a str,
+        record_len: u32,
+    }
+
+    fn compress_binary_tree(
+        agent: &impl Agent,
+        mut proofs: Vec<Vec<u8>>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut height = 0;
+        let mut next = Vec::with_capacity(proofs.len());
+        while proofs.len() > 1 {
+            info!("Compressing {} proofs at height {}", proofs.len(), height);
+            next.clear();
+
+            {
+                let mut iter = proofs.drain(..);
+
+                while let Some(left) = iter.next() {
+                    if let Some(right) = iter.next() {
+                        let inputs = serialize_to_msgpack_bytes(&[&left, &right])
+                            .context("Failed to pack")?;
+                        let out = agent.compress(inputs).context("Failed to compress")?;
+                        next.push(out);
+                    } else {
+                        next.push(left);
+                    }
+                }
+            }
+
+            proofs = std::mem::take(&mut next);
+            height += 1;
+            info!("Reduced to {} proofs at height {}", proofs.len(), height);
+        }
+
+        proofs.pop().ok_or_else(|| anyhow!("No final proof generated"))
+    }
+
+    fn run_e2e_case(agent: &impl Agent, metadata_dir: &Path, case: &E2eCase) -> anyhow::Result<()> {
+        let elf_path: PathBuf = metadata_dir.join(case.elf_path);
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize elf")?;
+        let vk_bytes = agent.setup(elf_path_packed.clone()).context("Failed to setup engine")?;
+
+        let mut lifted: Vec<Vec<u8>> = Vec::with_capacity(case.record_len as usize);
+
+        for i in 1..=case.record_len {
+            let record_path = metadata_dir.join(case.record_glob_fmt.replace("{}", &i.to_string()));
+
+            let record_path_packed =
+                serialize_to_msgpack_bytes(&record_path).context("Failed to pack")?;
+            let elf_path_packed =
+                serialize_to_msgpack_bytes(&elf_path).context("Failed to pack")?;
+            let chunks = vec![record_path_packed, elf_path_packed, vk_bytes.clone()];
+            let inputs = serialize_to_msgpack_bytes(&chunks).context("Failed to pack")?;
+
+            let proof = agent.prove_lift(inputs).context("Failed to prove lift")?;
+            lifted.push(proof);
+        }
+
+        let final_proof = compress_binary_tree(agent, lifted).context("Failed to compress")?;
+
+        let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
+        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path).context("Failed to pack")?;
+
+        let wrap_compress_inputs: Vec<u8> =
+            serialize_to_msgpack_bytes(&[&pv_path_packed, &final_proof])
+                .context("Failed to pack")?;
+        let wrap_compressed_proof =
+            agent.wrap_compress(wrap_compress_inputs).context("Failed to wrap compress")?;
+
+        let wrap_compress_verify_inputs: Vec<u8> =
+            serialize_to_msgpack_bytes(&[&wrap_compressed_proof, &vk_bytes])
+                .context("Failed to pack")?;
+        agent
+            .verify_compress(wrap_compress_verify_inputs)
+            .context("Compressed proof verification failed")?;
+        Ok(())
+    }
+
     #[test]
-    fn test_e2e_fibonacci_binary_tree_based_compressed_proof_generation() -> anyhow::Result<()> {
+    fn test_e2e_binary_tree_variants() -> anyhow::Result<()> {
         let (metadata_dir, cpu_agent) =
             setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let prover = &cpu_agent.prover;
+        // Case 1: single record (without compress operation)
+        let case_single = E2eCase {
+            elf_path: "elf/single_record_elf.bin",
+            record_glob_fmt: "record/single_record_{}.bin",
+            record_len: 1,
+        };
 
-        let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        // Case 2: three records (with compress operation)
+        let case_multi = E2eCase {
+            elf_path: "elf/fibonacci-elf",
+            record_glob_fmt: "record/fibonacci-elf_shardsize_14_record_{}.bin",
+            record_len: 3,
+        };
 
-        let vk = cpu_agent.setup(elf_path_packed.clone())?;
-        let mut lifted_proofs = Vec::new();
-
-        for i in 1..=3 {
-            let record_path =
-                metadata_dir.join(format!("record/fibonacci-elf_shardsize_14_record_{}.bin", i));
-            let record_path_packed = serialize_to_msgpack_bytes(&record_path)?;
-            let vk_clone = vk.clone();
-
-            let inputs: Vec<Vec<u8>> = vec![record_path_packed, elf_path_packed.clone(), vk_clone];
-            let inputs_packed = serialize_to_msgpack_bytes(&inputs)?;
-
-            let proof = cpu_agent.prove_lift(inputs_packed)?;
-            lifted_proofs.push(proof);
+        for case in [&case_single, &case_multi] {
+            run_e2e_case(&cpu_agent, &metadata_dir, case)
+                .with_context(|| format!("case failed: elf_rel={}", case.elf_path))?;
         }
-
-        info!("lifted_proofs size: {}", lifted_proofs.len());
-        let mut current_height = 0;
-        let mut current_proofs = lifted_proofs.clone();
-
-        while current_proofs.len() > 1 {
-            info!(
-                "Compressing {} proofs at height {} sequentially",
-                current_proofs.len(),
-                current_height
-            );
-
-            let mut next_level = Vec::new();
-            let mut i = 0;
-
-            while i + 1 < current_proofs.len() {
-                let left = &current_proofs[i];
-                let right = &current_proofs[i + 1];
-
-                info!("Compressing pair [{}, {}] at height {}", i, i + 1, current_height);
-
-                let is_complete_bool = current_proofs.len() == 2 && i + 2 >= current_proofs.len();
-                let is_complete_packed = serialize_to_msgpack_bytes(&is_complete_bool)?;
-
-                let inputs: Vec<Vec<u8>> = vec![left.clone(), right.clone(), is_complete_packed];
-                let inputs_packed = serialize_to_msgpack_bytes(&inputs)?;
-
-                let result_bytes = cpu_agent.compress(inputs_packed)?;
-                next_level.push(result_bytes);
-
-                i += 2;
-            }
-
-            if i < current_proofs.len() {
-                next_level.push(current_proofs[i].clone());
-            }
-
-            current_proofs = next_level;
-            current_height += 1;
-
-            info!("Reduced to {} proofs at height {}", current_proofs.len(), current_height);
-        }
-
-        let final_proof_vec =
-            current_proofs.pop().ok_or_else(|| anyhow!("No final proof generated"))?;
-
-        let final_proof: SP1ReduceProof<InnerSC> =
-            deserialize_from_bincode_bytes(&final_proof_vec)?;
-
-        let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
-        let vk = SP1VerifyingKey { vk };
-
-        prover.verify_compressed(&final_proof, &vk).expect("Compressed proof verification failed");
-
         Ok(())
     }
 
