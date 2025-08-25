@@ -6,12 +6,11 @@ use p3_matrix::dense::DenseMatrix;
 use sp1_core_executor::SP1ReduceProof;
 use sp1_prover::{CoreSC, DeviceProvingKey, InnerSC, OuterSC, SP1CircuitWitness, SP1Prover};
 use sp1_recursion_circuit::machine::{SP1CompressWithVkeyShape, SP1DeferredWitnessValues};
+use sp1_recursion_core::ExecutionRecord as RecursionExecutionRecord;
 use sp1_recursion_core::RecursionProgram;
-use sp1_recursion_core::{DIGEST_SIZE, ExecutionRecord as RecursionExecutionRecord};
 use sp1_sdk::SP1ProofWithPublicValues;
 use sp1_stark::baby_bear_poseidon2::BabyBearPoseidon2;
-use sp1_stark::{SP1ProverOpts, ShardProof, StarkVerifyingKey, Val};
-use std::any::Any;
+use sp1_stark::{DIGEST_SIZE, SP1ProverOpts, ShardProof, StarkVerifyingKey, Val};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
@@ -32,10 +31,10 @@ pub struct Sp1Agent {
 
 pub trait Agent: Send + Sync {
     fn name(&self) -> &'static str;
-    fn as_any(self: Box<Self>) -> Box<dyn Any>;
     fn setup(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn prove_lift(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+    fn lift_defer(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn compress(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn shrink_wrap(&self, input: Vec<u8>) -> Result<Vec<u8>>;
     fn groth16(&self, input: Vec<u8>) -> Result<Vec<u8>>;
@@ -79,11 +78,21 @@ pub trait Agent: Send + Sync {
     ) -> Result<(Vec<SP1DeferredWitnessValues<InnerSC>>, [BabyBear; DIGEST_SIZE])>;
 }
 
-type SetupInput = Msgpack<String>;
+pub type SetupInput = (Msgpack<String>, Msgpack<String>);
+
+pub type SetupOutput = (
+    Bincode<StarkVerifyingKey<CoreSC>>,
+    (Msgpack<Vec<SP1DeferredWitnessValues<InnerSC>>>, Bincode<[BabyBear; DIGEST_SIZE]>),
+);
 
 type ProveInput = (Msgpack<String>, (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>));
 
-type ProveLiftInput = (Msgpack<String>, (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>));
+type ProveLiftInput = (
+    Msgpack<String>,
+    (Msgpack<String>, (Bincode<StarkVerifyingKey<CoreSC>>, Bincode<[BabyBear; DIGEST_SIZE]>)),
+);
+
+type LiftDeferInput = Msgpack<SP1DeferredWitnessValues<InnerSC>>;
 
 type CompressInput = (Bincode<SP1ReduceProof<InnerSC>>, Bincode<SP1ReduceProof<InnerSC>>);
 

@@ -1,16 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use crate::e2e::tests::setup_agent_and_metadata_dir;
+    use crate::e2e::tests::{setup, setup_agent_and_metadata_dir};
     use crate::tasks::Agent;
     use anyhow::{Context, Result};
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
-    use common::serialization::mpk::serialize_to_msgpack_bytes;
     use sp1_core_executor::SP1ReduceProof;
-    use sp1_prover::{CoreSC, InnerSC, SP1VerifyingKey};
+    use sp1_prover::{InnerSC, SP1VerifyingKey};
     use sp1_sdk::SP1ProofWithPublicValues;
-    use sp1_stark::StarkVerifyingKey;
     use std::fs;
 
     #[test]
@@ -37,12 +35,9 @@ mod tests {
         let prover = &agent.prover;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed =
-            serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
-        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
-        let vk: StarkVerifyingKey<CoreSC> =
-            deserialize_from_bincode_bytes(&vk).context("Failed to deserialize vk")?;
+        let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
+        let (vk, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
         let vk = SP1VerifyingKey { vk };
 
         prover.verify_wrap_bn254(&wrap_proof, &vk).expect("Wrap proof verification failed");

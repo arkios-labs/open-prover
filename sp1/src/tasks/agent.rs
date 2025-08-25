@@ -1,7 +1,7 @@
 use crate::tasks::{
-    Agent, ClusterProverComponents, CompressInput, Groth16Input, PlonkInput, ProveInput,
-    ProveLiftInput, SetupInput, ShrinkWrapInput, Sp1Agent, Traces, VerifyCompressInput,
-    VerifyGroth16Input, VerifyPlonkInput, WrapCompressInput,
+    Agent, ClusterProverComponents, CompressInput, Groth16Input, LiftDeferInput, PlonkInput,
+    ProveInput, ProveLiftInput, SetupInput, SetupOutput, ShrinkWrapInput, Sp1Agent, Traces,
+    VerifyCompressInput, VerifyGroth16Input, VerifyPlonkInput, WrapCompressInput,
 };
 use anyhow::{Context, Error, Result};
 use cfg_if::cfg_if;
@@ -13,6 +13,7 @@ use common::serialization::{ArgBytes, NestedArgBytes};
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use sp1_core_executor::{ExecutionRecord, RiscvAirId, SP1ReduceProof};
+use sp1_core_machine::io::SP1Stdin;
 use sp1_core_machine::shape::Shapeable;
 use sp1_prover::shapes::SP1CompressProgramShape;
 use sp1_prover::{
@@ -37,7 +38,6 @@ use sp1_stark::{
     Challenge, DIGEST_SIZE, MachineProver, SP1ProverOpts, ShardProof, StarkGenericConfig,
     StarkVerifyingKey, Val,
 };
-use std::any::Any;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::fs;
@@ -88,16 +88,12 @@ impl Agent for Sp1Agent {
         }
     }
 
-    fn as_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-
     fn setup(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::setup()");
         let start_time = Instant::now();
 
-        let Msgpack(elf_path): SetupInput =
-            ArgBytes::from_arg_bytes(&input).context("Failed to parse setup input")?;
+        let (Msgpack(elf_path), Msgpack(stdin_path)): SetupInput =
+            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse setup input")?;
 
         let elf_bytes = fs::read(&elf_path)
             .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
@@ -105,11 +101,30 @@ impl Agent for Sp1Agent {
         let elf_deserialized: Vec<u8> =
             deserialize_from_bincode_bytes(&elf_bytes).context("Failed to deserialize ELF")?;
 
-        let (_, _, _, vk) = self.prover.setup(&elf_deserialized);
-        let vk = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
+        let (_, _, _, vkey) = self.prover.setup(&elf_deserialized);
+
+        let stdin_bytes = fs::read(&stdin_path)
+            .with_context(|| format!("Failed to read stdin at {}", stdin_path))?;
+        let stdin_deserialized: SP1Stdin =
+            deserialize_from_bincode_bytes(&stdin_bytes).context("Failed to deserialize stdin")?;
+
+        let deferred_proofs = stdin_deserialized.proofs;
+        let (deferred_inputs, deferred_digest) = self
+            .prove_deferred_leaves(
+                &vkey.vk,
+                deferred_proofs.into_iter().map(|p| (p.0.vk, p.0.proof)).collect::<Vec<_>>(),
+            )
+            .context("Failed to prove deferred leaves")?;
+
+        let setup_output: SetupOutput =
+            (Bincode(vkey.vk), (Msgpack(deferred_inputs), Bincode(deferred_digest)));
+
+        let serialized = NestedArgBytes::to_nested_arg_bytes(&setup_output)
+            .context("Failed to serialize setup output")?;
+
         let elapsed = start_time.elapsed();
         info!("Agent::setup() took {:?}", elapsed);
-        Ok(vk)
+        Ok(serialized)
     }
 
     fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
@@ -170,9 +185,8 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         // Step 1: Load & process record
-        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveLiftInput =
-            NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse prove_lift input")?;
+        let (Msgpack(record_path), (Msgpack(elf_path), (Bincode(vk), Bincode(deferred_digest)))): ProveLiftInput =
+            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse prove_lift input")?;
 
         let record = fs::read(&record_path).context("Failed to read record file")?;
         let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&record)
@@ -210,10 +224,10 @@ impl Agent for Sp1Agent {
         // Step 4: Generate recursion witness
         let is_first_shard = record.public_values.shard == 1;
         let has_no_next_record = record.public_values.next_pc == 0;
+        let has_no_deferred_proofs = deferred_digest == [Val::<CoreSC>::zero(); DIGEST_SIZE];
 
-        // The proof request is complete if it consists of only this single record.
-        let is_complete = is_first_shard && has_no_next_record;
-        let deferred_digest = [Val::<CoreSC>::zero(); DIGEST_SIZE];
+        // The proof request is complete if first shard, no next record, and no deferred proofs.
+        let is_complete = is_first_shard && has_no_next_record && has_no_deferred_proofs;
 
         let witness = SP1CircuitWitness::Core(SP1RecursionWitnessValues {
             vk,
@@ -253,6 +267,25 @@ impl Agent for Sp1Agent {
         let elapsed = start_time.elapsed();
         info!("Agent::prove_lift() took {:?}", elapsed);
 
+        Ok(serialized)
+    }
+
+    fn lift_defer(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+        info!("Agent::lift_defer()");
+        let start_time = Instant::now();
+
+        let Msgpack(deferred_input): LiftDeferInput =
+            ArgBytes::from_arg_bytes(&input).context("Failed to parse lift_defer input")?;
+
+        let reduce_proof = self
+            .setup_and_prove_compress(SP1CircuitWitness::Deferred(deferred_input), self.prover_opts)
+            .context("Failed to prove deferred")?;
+
+        let serialized = serialize_to_bincode_bytes(&reduce_proof)
+            .context("Failed to serialize reduce_proof")?;
+
+        let elapsed = start_time.elapsed();
+        info!("Agent::lift_defer() took {:?}", elapsed);
         Ok(serialized)
     }
 
