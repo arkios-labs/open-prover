@@ -2,7 +2,7 @@
 mod tests {
     use crate::e2e::tests::setup_agent_and_metadata_dir;
     use crate::tasks::Agent;
-    use anyhow::Context;
+    use anyhow::{Context, Result};
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
@@ -14,7 +14,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_e2e_wrap_proof_generation() -> anyhow::Result<()> {
+    fn test_e2e_wrap_proof_generation() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let compressed_proof =

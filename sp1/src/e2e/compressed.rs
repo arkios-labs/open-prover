@@ -2,7 +2,7 @@
 mod tests {
     use crate::e2e::tests::setup_agent_and_metadata_dir;
     use crate::tasks::Agent;
-    use anyhow::{Context, anyhow};
+    use anyhow::{Context, Result, anyhow};
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use common::serialization::mpk::serialize_to_msgpack_bytes;
     use std::fs;
@@ -15,10 +15,7 @@ mod tests {
         record_len: u32,
     }
 
-    fn compress_binary_tree(
-        agent: &impl Agent,
-        mut proofs: Vec<Vec<u8>>,
-    ) -> anyhow::Result<Vec<u8>> {
+    fn compress_binary_tree(agent: &impl Agent, mut proofs: Vec<Vec<u8>>) -> Result<Vec<u8>> {
         let mut height = 0;
         let mut next = Vec::with_capacity(proofs.len());
         while proofs.len() > 1 {
@@ -48,7 +45,7 @@ mod tests {
         proofs.pop().ok_or_else(|| anyhow!("No final proof generated"))
     }
 
-    fn run_e2e_case(agent: &impl Agent, metadata_dir: &Path, case: &E2eCase) -> anyhow::Result<()> {
+    fn run_e2e_case(agent: &impl Agent, metadata_dir: &Path, case: &E2eCase) -> Result<()> {
         let elf_path: PathBuf = metadata_dir.join(case.elf_path);
         let elf_path_packed =
             serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize elf")?;
@@ -91,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn test_e2e_binary_tree_variants() -> anyhow::Result<()> {
+    fn test_e2e_binary_tree_variants() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         // Case 1: single record (without compress operation)
@@ -116,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wrap_compress_proof() -> anyhow::Result<()> {
+    fn test_wrap_compress_proof() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
@@ -135,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_compress_proof() -> anyhow::Result<()> {
+    fn test_verify_compress_proof() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");

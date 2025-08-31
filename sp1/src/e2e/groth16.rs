@@ -2,7 +2,7 @@
 mod tests {
     use crate::e2e::tests::setup_agent_and_metadata_dir;
     use crate::tasks::Agent;
-    use anyhow::Context;
+    use anyhow::{Context, Result};
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use common::serialization::mpk::serialize_to_msgpack_bytes;
     use sp1_prover::{CoreSC, SP1PublicValues, SP1VerifyingKey};
@@ -12,7 +12,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_e2e_groth16_proof_generation() -> anyhow::Result<()> {
+    fn test_e2e_groth16_proof_generation() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
@@ -54,7 +54,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_groth16_proof() -> anyhow::Result<()> {
+    fn test_verify_groth16_proof() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");

@@ -1,5 +1,5 @@
 use crate::serialization::{FormatDeserialize, FromBytes, FromVecBytes};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde::{Serialize, de::DeserializeOwned};
 
 pub fn serialize_to_bincode_bytes<T: Serialize>(item: &T) -> Result<Vec<u8>> {
@@ -19,7 +19,7 @@ impl<T> FormatDeserialize for Bincode<T>
 where
     T: serde::de::DeserializeOwned,
 {
-    fn deserialize(input: &[u8]) -> anyhow::Result<Self> {
+    fn deserialize(input: &[u8]) -> Result<Self> {
         let t = deserialize_from_bincode_bytes(input)?;
         Ok(Bincode(t))
     }
@@ -29,7 +29,7 @@ impl<T> FromBytes for Bincode<T>
 where
     T: serde::de::DeserializeOwned,
 {
-    fn from_bytes(input: &[u8]) -> anyhow::Result<Self> {
+    fn from_bytes(input: &[u8]) -> Result<Self> {
         let value = deserialize_from_bincode_bytes(input)?;
         Ok(Bincode(value))
     }
@@ -39,9 +39,9 @@ impl<T> FromVecBytes for Bincode<T>
 where
     T: serde::de::DeserializeOwned,
 {
-    fn from_vec_bytes(inputs: &[Vec<u8>]) -> anyhow::Result<Self> {
+    fn from_vec_bytes(inputs: &[Vec<u8>]) -> Result<Self> {
         if inputs.len() != 1 {
-            return Err(anyhow::anyhow!("Expected exactly 1 input for Bincode<T>"));
+            return Err(anyhow!("Expected exactly 1 input for Bincode<T>"));
         }
         let value = deserialize_from_bincode_bytes(&inputs[0])?;
         Ok(Bincode(value))

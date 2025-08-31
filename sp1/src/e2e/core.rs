@@ -2,7 +2,7 @@
 mod tests {
     use crate::e2e::tests::setup_agent_and_metadata_dir;
     use crate::tasks::Agent;
-    use anyhow::Context;
+    use anyhow::{Context, Result};
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use common::serialization::mpk::serialize_to_msgpack_bytes;
     use sp1_core_machine::io::SP1Stdin;
@@ -13,7 +13,7 @@ mod tests {
     use tracing::info;
 
     #[test]
-    fn test_e2e_fibonacci_core_proof_generation() -> anyhow::Result<()> {
+    fn test_e2e_fibonacci_core_proof_generation() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
@@ -66,7 +66,7 @@ mod tests {
     }
 
     #[test]
-    fn test_e2e_keccak_core_proof_generation() -> anyhow::Result<()> {
+    fn test_e2e_keccak_core_proof_generation() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/keccak-elf_shardsize_14_pv.bin");

@@ -3,7 +3,7 @@ use crate::tasks::{
     ShrinkWrapInput, Sp1Agent, VerifyCompressInput, VerifyGroth16Input, VerifyPlonkInput,
     WrapCompressInput,
 };
-use anyhow::Context;
+use anyhow::{Context, Result};
 use cfg_if::cfg_if;
 use common::serialization::bincode::{
     Bincode, deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
@@ -38,7 +38,7 @@ use tracing::info;
 use sp1_stark::MachineProvingKey;
 
 impl Sp1Agent {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> Result<Self> {
         cfg_if! {
             if #[cfg(feature = "gpu")] {
                 let inner_prover = moongate_prover::SP1GpuProver::new();
@@ -67,7 +67,7 @@ impl Agent for Sp1Agent {
         self
     }
 
-    fn setup(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn setup(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::setup()");
         let start_time = Instant::now();
 
@@ -87,7 +87,7 @@ impl Agent for Sp1Agent {
         Ok(vkey)
     }
 
-    fn prove(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::prove()");
         let start_time = Instant::now();
 
@@ -139,7 +139,7 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn prove_lift(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn prove_lift(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::prove_lift()");
         let start_time = Instant::now();
 
@@ -265,7 +265,7 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn compress(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
@@ -358,7 +358,7 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn shrink_wrap(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn shrink_wrap(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::shrink_wrap()");
         let start_time = Instant::now();
 
@@ -377,7 +377,7 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn groth16(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn groth16(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::groth16()");
         let start_time = Instant::now();
 
@@ -414,7 +414,7 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn plonk(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn plonk(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::plonk()");
         let start_time = Instant::now();
 
@@ -451,7 +451,7 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn wrap_compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn wrap_compress(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::wrap_compress()");
         let start_time = Instant::now();
 
@@ -478,7 +478,7 @@ impl Agent for Sp1Agent {
         Ok(serialized)
     }
 
-    fn verify_compress(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn verify_compress(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::verify_compressed()");
         let start_time = Instant::now();
 
@@ -497,7 +497,7 @@ impl Agent for Sp1Agent {
         Ok(result)
     }
 
-    fn verify_groth16(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn verify_groth16(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::verify_groth16()");
         let start_time = Instant::now();
 
@@ -528,7 +528,7 @@ impl Agent for Sp1Agent {
         Ok(result)
     }
 
-    fn verify_plonk(&self, input: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    fn verify_plonk(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::verify_plonk()");
         let start_time = Instant::now();
 

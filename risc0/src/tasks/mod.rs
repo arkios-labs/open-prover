@@ -94,7 +94,7 @@ fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
     }
 }
 
-pub fn setup_agent_and_metadata_dir() -> anyhow::Result<(PathBuf, RiscZeroAgent)> {
+pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, RiscZeroAgent)> {
     let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
 
     let metadata_dir = PathBuf::from("metadata");

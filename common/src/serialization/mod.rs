@@ -1,6 +1,6 @@
 use crate::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
 use crate::serialization::mpk::{deserialize_from_msgpack_bytes, serialize_to_msgpack_bytes};
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use std::io::{Read, Write};
 
 pub mod bincode;
@@ -15,10 +15,7 @@ pub enum Format {
 
 const MAX_READ_SIZE: usize = 500 * 1024 * 1024;
 
-pub fn recv<R: Read, T: serde::de::DeserializeOwned>(
-    reader: &mut R,
-    format: Format,
-) -> anyhow::Result<T> {
+pub fn recv<R: Read, T: serde::de::DeserializeOwned>(reader: &mut R, format: Format) -> Result<T> {
     let mut size_buf = [0u8; 8];
     if let Err(e) = reader.read_exact(&mut size_buf) {
         return if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -31,7 +28,7 @@ pub fn recv<R: Read, T: serde::de::DeserializeOwned>(
     let size = u64::from_le_bytes(size_buf) as usize;
 
     if size == 0 {
-        return Err(anyhow::anyhow!("Received empty payload"));
+        return Err(anyhow!("Received empty payload"));
     }
 
     if size > MAX_READ_SIZE {
@@ -54,7 +51,7 @@ pub fn send<W: Write, T: serde::Serialize>(
     writer: &mut W,
     response: &T,
     format: Format,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let data = match format {
         Format::Msgpack => serialize_to_msgpack_bytes(response),
         Format::Bincode => serialize_to_bincode_bytes(response),
@@ -76,17 +73,17 @@ pub fn send<W: Write, T: serde::Serialize>(
 
 /// Trait for deserializing a single value from raw bytes.
 pub trait FromBytes: Sized {
-    fn from_bytes(input: &[u8]) -> anyhow::Result<Self>;
+    fn from_bytes(input: &[u8]) -> Result<Self>;
 }
 
 /// Trait for constructing structured data from `Vec<Vec<u8>>`,
 /// typically deserialized from a Msgpack payload.
 pub trait FromVecBytes: Sized {
-    fn from_vec_bytes(inputs: &[Vec<u8>]) -> anyhow::Result<Self>;
+    fn from_vec_bytes(inputs: &[Vec<u8>]) -> Result<Self>;
 }
 
 impl FromVecBytes for () {
-    fn from_vec_bytes(_: &[Vec<u8>]) -> anyhow::Result<Self> {
+    fn from_vec_bytes(_: &[Vec<u8>]) -> Result<Self> {
         Ok(())
     }
 }
@@ -96,7 +93,7 @@ where
     Head: FromBytes,
     Tail: FromVecBytes,
 {
-    fn from_vec_bytes(inputs: &[Vec<u8>]) -> anyhow::Result<Self> {
+    fn from_vec_bytes(inputs: &[Vec<u8>]) -> Result<Self> {
         if inputs.is_empty() {
             bail!("Not enough inputs");
         }
@@ -108,14 +105,14 @@ where
 
 /// Entrypoint for parsing Msgpack-encoded `Vec<Vec<u8>>` into structured types.
 pub trait FromInputBytes: Sized {
-    fn from_input_bytes(input: &[u8]) -> anyhow::Result<Self>;
+    fn from_input_bytes(input: &[u8]) -> Result<Self>;
 }
 
 impl<T> FromInputBytes for T
 where
     T: FromVecBytes,
 {
-    fn from_input_bytes(input: &[u8]) -> anyhow::Result<Self> {
+    fn from_input_bytes(input: &[u8]) -> Result<Self> {
         if input.is_empty() {
             bail!("input is empty");
         }
@@ -130,13 +127,13 @@ where
 /// For types that can be deserialized from a single binary blob
 /// using a specific serialization format.
 pub trait FormatDeserialize: Sized {
-    fn deserialize(input: &[u8]) -> anyhow::Result<Self>;
+    fn deserialize(input: &[u8]) -> Result<Self>;
 }
 
 /// Parses a single binary payload using a format-aware wrapper type (e.g., Msgpack<T>, Bincode<T>).
 ///
 /// Use this when the input is a single serialized value.
-pub fn parse_single_input<T>(input: &[u8]) -> anyhow::Result<T>
+pub fn parse_single_input<T>(input: &[u8]) -> Result<T>
 where
     T: FormatDeserialize,
 {
@@ -188,7 +185,7 @@ mod tests {
     #[test]
     fn test_empty_payload_returns_error() {
         let mut buffer = Cursor::new(0u64.to_le_bytes().to_vec());
-        let result: anyhow::Result<TestData> = recv(&mut buffer, Format::Msgpack);
+        let result: Result<TestData> = recv(&mut buffer, Format::Msgpack);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty payload"));
     }
@@ -196,7 +193,7 @@ mod tests {
     #[test]
     fn test_invalid_data_fails_gracefully() {
         let mut buffer = Cursor::new(vec![0xFF; 20]); // invalid size header
-        let result: anyhow::Result<TestData> = recv(&mut buffer, Format::Msgpack);
+        let result: Result<TestData> = recv(&mut buffer, Format::Msgpack);
         assert!(result.is_err());
     }
 
@@ -281,10 +278,8 @@ mod tests {
     fn test_from_structured_input_invalid_format() {
         let not_nested_vec = serialize_to_msgpack_bytes(&"not nested array").unwrap();
 
-        let result: anyhow::Result<(
-            Msgpack<SerializationTestData>,
-            Bincode<SerializationTestData>,
-        )> = FromInputBytes::from_input_bytes(&not_nested_vec);
+        let result: Result<(Msgpack<SerializationTestData>, Bincode<SerializationTestData>)> =
+            FromInputBytes::from_input_bytes(&not_nested_vec);
 
         assert!(result.is_err());
 
@@ -294,17 +289,15 @@ mod tests {
 
     #[test]
     fn test_from_vec_bytes_empty_input() {
-        let result: anyhow::Result<(
-            Msgpack<SerializationTestData>,
-            Bincode<SerializationTestData>,
-        )> = FromVecBytes::from_vec_bytes(&[]);
+        let result: Result<(Msgpack<SerializationTestData>, Bincode<SerializationTestData>)> =
+            FromVecBytes::from_vec_bytes(&[]);
         assert!(result.is_err());
         assert!(format!("{:?}", result.unwrap_err()).contains("Not enough inputs"));
     }
 
     #[test]
     fn test_empty_input_returns_error() {
-        let result: anyhow::Result<Msgpack<SerializationTestData>> = parse_single_input(&[]);
+        let result: Result<Msgpack<SerializationTestData>> = parse_single_input(&[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("input is empty"));
     }
