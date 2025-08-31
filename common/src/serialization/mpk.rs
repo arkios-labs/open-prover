@@ -1,9 +1,10 @@
-use crate::serialization::{FormatDeserialize, FromBytes, FromVecBytes};
-use anyhow::{Context, Result, anyhow};
+use crate::serialization::{ArgBytes, NestedArgBytes};
+use anyhow::Context;
+use anyhow::{Result, bail};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-pub fn serialize_to_msgpack_bytes<T: Serialize>(item: &T) -> Result<Vec<u8>> {
+pub fn serialize_to_msgpack_bytes<T: Serialize + ?Sized>(item: &T) -> Result<Vec<u8>> {
     let buf = rmp_serde::to_vec_named(item).context("Failed to serialize to msgpack")?;
     Ok(buf)
 }
@@ -16,38 +17,35 @@ pub fn deserialize_from_msgpack_bytes<T: DeserializeOwned>(encoded: &[u8]) -> Re
 #[derive(Debug)]
 pub struct Msgpack<T>(pub T);
 
-impl<T> FormatDeserialize for Msgpack<T>
+impl<T> ArgBytes for Msgpack<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned + Serialize,
 {
-    fn deserialize(input: &[u8]) -> Result<Self> {
-        let t =
-            deserialize_from_msgpack_bytes(input).context("Failed to deserialize from msgpack")?;
-        Ok(Msgpack(t))
+    fn from_arg_bytes(bytes: &[u8]) -> Result<Self> {
+        let v =
+            deserialize_from_msgpack_bytes(bytes).context("Failed to deserialize from msgpack")?;
+        Ok(Self(v))
+    }
+    fn to_arg_bytes(&self) -> Result<Vec<u8>> {
+        serialize_to_msgpack_bytes(&self.0)
     }
 }
 
-impl<T> FromBytes for Msgpack<T>
+impl<T> NestedArgBytes for Msgpack<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned + Serialize,
 {
-    fn from_bytes(input: &[u8]) -> Result<Self> {
-        let value =
+    fn from_nested_arg_bytes(input: &[u8]) -> Result<Self> {
+        let chunks: Vec<Vec<u8>> =
             deserialize_from_msgpack_bytes(input).context("Failed to deserialize from msgpack")?;
-        Ok(Msgpack(value))
-    }
-}
-
-impl<T> FromVecBytes for Msgpack<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    fn from_vec_bytes(inputs: &[Vec<u8>]) -> Result<Self> {
-        if inputs.len() != 1 {
-            return Err(anyhow!("Expected exactly 1 input for Msgpack<T>"));
+        if chunks.len() != 1 {
+            bail!("Expected exactly one input chunk");
         }
-        let value = deserialize_from_msgpack_bytes(&inputs[0])
-            .context("Failed to deserialize from msgpack")?;
-        Ok(Msgpack(value))
+        Self::from_arg_bytes(&chunks[0])
+    }
+
+    fn to_nested_arg_bytes(&self) -> Result<Vec<u8>> {
+        let one = vec![self.to_arg_bytes().context("Failed to get arg")?];
+        serialize_to_msgpack_bytes(&one)
     }
 }
