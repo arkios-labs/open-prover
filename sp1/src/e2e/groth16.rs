@@ -32,14 +32,17 @@ mod tests {
 
         let prover = &agent.prover;
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize elf_path")?;
 
-        let vk = agent.setup(elf_path_packed)?;
-        let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk: StarkVerifyingKey<CoreSC> =
+            deserialize_from_bincode_bytes(&vk).context("Failed to deserialize vk")?;
         let vk = SP1VerifyingKey { vk };
 
         let pv = fs::read(&pv_path)?;
-        let pv: SP1PublicValues = deserialize_from_bincode_bytes(&pv)?;
+        let pv: SP1PublicValues =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
         prover
             .verify_groth16_bn254(

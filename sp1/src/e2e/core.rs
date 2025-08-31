@@ -17,32 +17,38 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv = fs::read(&pv_path)?;
-        let pv: SP1PublicValues = deserialize_from_bincode_bytes(&pv)?;
+        let pv = fs::read(&pv_path).context("Failed to read pv_path")?;
+        let pv: SP1PublicValues =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
-        let stdin = fs::read(&stdin_path)?;
-        let stdin: SP1Stdin = deserialize_from_bincode_bytes(&stdin)?;
+        let stdin = fs::read(&stdin_path).context("Failed to read stdin_path")?;
+        let stdin: SP1Stdin =
+            deserialize_from_bincode_bytes(&stdin).context("Failed to deserialize stdin")?;
 
         let prover = &agent.prover;
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
-        let vk = agent.setup(elf_path_packed.clone())?;
+        let vk = agent.setup(elf_path_packed.clone()).context("Failed to setup")?;
         for i in 1..=3 {
             let record_path =
                 metadata_dir.join(format!("record/fibonacci-elf_shardsize_14_record_{}.bin", i));
-            let record_path_serialized = serialize_to_msgpack_bytes(&record_path)?;
+            let record_path_serialized =
+                serialize_to_msgpack_bytes(&record_path).context("Failed to pack record_path")?;
 
             let inputs: Vec<Vec<u8>> =
                 vec![record_path_serialized, elf_path_packed.clone(), vk.clone()];
-            let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
+            let inputs_packed =
+                serialize_to_msgpack_bytes(&inputs).context("Failed to pack inputs")?;
 
-            let shard_proof_serialized = agent.prove(inputs_packed).unwrap();
+            let shard_proof_serialized = agent.prove(inputs_packed).context("Failed to prove")?;
             let shard_proof: ShardProof<CoreSC> =
-                deserialize_from_bincode_bytes(&shard_proof_serialized).unwrap();
+                deserialize_from_bincode_bytes(&shard_proof_serialized)
+                    .context("Failed to deserialize shard_proof")?;
 
             proofs.push(shard_proof);
         }
@@ -54,8 +60,9 @@ mod tests {
             cycles: 0,
         };
 
-        let vk = agent.setup(elf_path_packed)?;
-        let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk: StarkVerifyingKey<CoreSC> =
+            deserialize_from_bincode_bytes(&vk).context("Failed to deserialize vk")?;
         let vk = SP1VerifyingKey { vk };
 
         prover.verify(&core_proof.proof, &vk).expect("Core proof verification failed");
@@ -70,32 +77,38 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/keccak-elf_shardsize_14_pv.bin");
-        let pv = fs::read(&pv_path)?;
-        let pv: SP1PublicValues = deserialize_from_bincode_bytes(&pv)?;
+        let pv = fs::read(&pv_path).context("Failed to read pv_path")?;
+        let pv: SP1PublicValues =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
         let stdin_path = metadata_dir.join("stdin/keccak-elf_shardsize_14_stdin.bin");
-        let stdin = fs::read(&stdin_path)?;
-        let stdin: SP1Stdin = deserialize_from_bincode_bytes(&stdin)?;
+        let stdin = fs::read(&stdin_path).context("Failed to read stdin_path")?;
+        let stdin: SP1Stdin =
+            deserialize_from_bincode_bytes(&stdin).context("Failed to deserialize stdin")?;
 
         let prover = &agent.prover;
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/keccak-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
-        let vk = agent.setup(elf_path_packed.clone())?;
+        let vk = agent.setup(elf_path_packed.clone()).context("Failed to setup")?;
         for i in 1..=4 {
             let record_path =
                 metadata_dir.join(format!("record/keccak-elf_shardsize_14_record_{}.bin", i));
-            let record_path_serialized = serialize_to_msgpack_bytes(&record_path)?;
+            let record_path_serialized =
+                serialize_to_msgpack_bytes(&record_path).context("Failed to pack record_path")?;
 
             let inputs: Vec<Vec<u8>> =
                 vec![record_path_serialized, elf_path_packed.clone(), vk.clone()];
-            let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
+            let inputs_packed =
+                serialize_to_msgpack_bytes(&inputs).context("Failed to pack inputs")?;
 
-            let shard_proof_serialized = agent.prove(inputs_packed).unwrap();
+            let shard_proof_serialized = agent.prove(inputs_packed).context("Failed to prove")?;
             let shard_proof: ShardProof<CoreSC> =
-                deserialize_from_bincode_bytes(&shard_proof_serialized).unwrap();
+                deserialize_from_bincode_bytes(&shard_proof_serialized)
+                    .context("Failed to deserialize shard_proof")?;
 
             proofs.push(shard_proof);
         }
@@ -107,8 +120,9 @@ mod tests {
             cycles: 0,
         };
 
-        let vk = agent.setup(elf_path_packed)?;
-        let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk: StarkVerifyingKey<CoreSC> =
+            deserialize_from_bincode_bytes(&vk).context("Failed to deserialize vk")?;
         let vk = SP1VerifyingKey { vk };
 
         prover.verify(&core_proof.proof, &vk).expect("Core proof verification failed");

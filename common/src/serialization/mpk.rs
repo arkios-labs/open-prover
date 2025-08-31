@@ -4,12 +4,12 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub fn serialize_to_msgpack_bytes<T: Serialize>(item: &T) -> Result<Vec<u8>> {
-    let buf = rmp_serde::to_vec_named(item).context("failed to serialize to msgpack")?;
+    let buf = rmp_serde::to_vec_named(item).context("Failed to serialize to msgpack")?;
     Ok(buf)
 }
 
 pub fn deserialize_from_msgpack_bytes<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
-    let decoded = rmp_serde::from_slice(encoded).context("failed to deserialize from msgpack")?;
+    let decoded = rmp_serde::from_slice(encoded).context("Failed to deserialize from msgpack")?;
     Ok(decoded)
 }
 
@@ -21,7 +21,8 @@ where
     T: serde::de::DeserializeOwned,
 {
     fn deserialize(input: &[u8]) -> Result<Self> {
-        let t = deserialize_from_msgpack_bytes(input)?;
+        let t =
+            deserialize_from_msgpack_bytes(input).context("Failed to deserialize from msgpack")?;
         Ok(Msgpack(t))
     }
 }
@@ -31,7 +32,8 @@ where
     T: serde::de::DeserializeOwned,
 {
     fn from_bytes(input: &[u8]) -> Result<Self> {
-        let value = deserialize_from_msgpack_bytes(input)?;
+        let value =
+            deserialize_from_msgpack_bytes(input).context("Failed to deserialize from msgpack")?;
         Ok(Msgpack(value))
     }
 }
@@ -44,7 +46,8 @@ where
         if inputs.len() != 1 {
             return Err(anyhow!("Expected exactly 1 input for Msgpack<T>"));
         }
-        let value = deserialize_from_msgpack_bytes(&inputs[0])?;
+        let value = deserialize_from_msgpack_bytes(&inputs[0])
+            .context("Failed to deserialize from msgpack")?;
         Ok(Msgpack(value))
     }
 }

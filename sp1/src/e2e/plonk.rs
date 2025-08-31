@@ -16,10 +16,12 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
+        let pv_path_packed =
+            serialize_to_msgpack_bytes(&pv_path).context("Failed to pack pv_path")?;
 
         let wrap_proof =
-            fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_wrap_proof.bin"))?;
+            fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_wrap_proof.bin"))
+                .context("Failed to read wrap_proof")?;
 
         let inputs: Vec<Vec<u8>> = vec![pv_path_packed, wrap_proof];
         let inputs_packed =
@@ -31,14 +33,17 @@ mod tests {
 
         let prover = &agent.prover;
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize elf_path")?;
 
-        let vk = agent.setup(elf_path_packed)?;
-        let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk: StarkVerifyingKey<CoreSC> =
+            deserialize_from_bincode_bytes(&vk).context("Failed to deserialize vk")?;
         let vk = SP1VerifyingKey { vk };
 
         let pv = fs::read(&pv_path)?;
-        let pv: SP1PublicValues = deserialize_from_bincode_bytes(&pv)?;
+        let pv: SP1PublicValues =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
         prover
             .verify_plonk_bn254(
@@ -56,7 +61,8 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
         let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
 
@@ -65,13 +71,17 @@ mod tests {
         let plonk_proof = fs::read(&plonk_proof_path).context("Failed to read plonk proof")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
+        let pv_path_packed =
+            serialize_to_msgpack_bytes(&pv_path).context("Failed to pack pv_path")?;
 
         let verify_inputs: Vec<Vec<u8>> = vec![plonk_proof, vk, pv_path_packed];
-        let verify_inputs_packed = serialize_to_msgpack_bytes(&verify_inputs)?;
+        let verify_inputs_packed =
+            serialize_to_msgpack_bytes(&verify_inputs).context("Failed to pack verify_inputs")?;
 
-        let verify_result = agent.verify_plonk(verify_inputs_packed)?;
-        let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)?;
+        let verify_result =
+            agent.verify_plonk(verify_inputs_packed).context("Failed to verify_plonk")?;
+        let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)
+            .context("Failed to deserialize verify_result")?;
         assert!(verify_success, "Plonk proof verification should succeed");
 
         Ok(())

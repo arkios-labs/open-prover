@@ -117,16 +117,19 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
+        let pv_path_packed =
+            serialize_to_msgpack_bytes(&pv_path).context("Failed to pack pv_path")?;
         let compressed_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_raw_compressed_proof.bin");
         let compressed_proof =
             fs::read(&compressed_proof_path).context("Failed to read compressed proof")?;
 
         let inputs: Vec<Vec<u8>> = vec![pv_path_packed, compressed_proof];
-        let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
+        let inputs_packed =
+            serialize_to_msgpack_bytes(&inputs).context("Failed to serialize inputs")?;
 
-        let _wrapped_compress_proof = agent.wrap_compress(inputs_packed)?;
+        let _wrapped_compress_proof =
+            agent.wrap_compress(inputs_packed).context("Failed to wrap_compress")?;
 
         Ok(())
     }
@@ -136,7 +139,8 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
         let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
 
@@ -146,10 +150,13 @@ mod tests {
             fs::read(&compressed_proof_path).context("Failed to read compressed proof")?;
 
         let verify_inputs: Vec<Vec<u8>> = vec![compressed_proof, vk];
-        let verify_inputs_packed = serialize_to_msgpack_bytes(&verify_inputs)?;
+        let verify_inputs_packed =
+            serialize_to_msgpack_bytes(&verify_inputs).context("Failed to pack verify_inputs")?;
 
-        let verify_result = agent.verify_compress(verify_inputs_packed)?;
-        let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)?;
+        let verify_result =
+            agent.verify_compress(verify_inputs_packed).context("Failed to verify_compress")?;
+        let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)
+            .context("Failed to deserialize verify_result")?;
         assert!(verify_success, "Compressed proof verification should succeed");
 
         Ok(())

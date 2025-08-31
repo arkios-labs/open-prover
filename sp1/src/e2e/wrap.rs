@@ -18,25 +18,31 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let compressed_proof =
-            fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin"))?;
+            fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin"))
+                .context("Failed to read compressed_proof")?;
 
         let compressed_proof: SP1ProofWithPublicValues =
-            deserialize_from_bincode_bytes(&compressed_proof)?;
+            deserialize_from_bincode_bytes(&compressed_proof)
+                .context("Failed to deserialize compressed_proof")?;
         let compressed_proof: SP1ReduceProof<InnerSC> =
             *compressed_proof.proof.try_as_compressed().unwrap();
         let compressed_proof_serialized =
             serialize_to_bincode_bytes(&compressed_proof).expect("Failed to serialize");
 
-        let wrap_proof_vec = agent.shrink_wrap(compressed_proof_serialized).unwrap();
-        let wrap_proof = deserialize_from_bincode_bytes(&wrap_proof_vec).unwrap();
+        let wrap_proof_vec =
+            agent.shrink_wrap(compressed_proof_serialized).context("Failed to shrink_wrap")?;
+        let wrap_proof = deserialize_from_bincode_bytes(&wrap_proof_vec)
+            .context("Failed to deserialize wrap_proof")?;
 
         let prover = &agent.prover;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
+        let elf_path_packed =
+            serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
-        let vk = agent.setup(elf_path_packed)?;
-        let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk: StarkVerifyingKey<CoreSC> =
+            deserialize_from_bincode_bytes(&vk).context("Failed to deserialize vk")?;
         let vk = SP1VerifyingKey { vk };
 
         prover.verify_wrap_bn254(&wrap_proof, &vk).expect("Wrap proof verification failed");

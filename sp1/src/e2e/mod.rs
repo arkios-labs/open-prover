@@ -7,7 +7,7 @@ mod wrap;
 #[cfg(test)]
 pub mod tests {
     use crate::tasks::Sp1Agent;
-    use anyhow::Result;
+    use anyhow::{Context, Result};
     use std::path::PathBuf;
 
     pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, Sp1Agent)> {
@@ -15,7 +15,7 @@ pub mod tests {
 
         let metadata_dir = PathBuf::from("metadata");
 
-        let agent = Sp1Agent::new()?;
+        let agent = Sp1Agent::new().context("Failed to create agent")?;
 
         Ok((metadata_dir, agent))
     }
