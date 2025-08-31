@@ -13,8 +13,7 @@ mod tests {
 
     #[test]
     fn test_e2e_groth16_proof_generation() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
@@ -26,16 +25,16 @@ mod tests {
         let inputs_packed =
             serialize_to_msgpack_bytes(&inputs).expect("Failed to serialize inputs");
 
-        let groth16_proof_vec = cpu_agent.groth16(inputs_packed).expect("Failed to generate proof");
+        let groth16_proof_vec = agent.groth16(inputs_packed).expect("Failed to generate proof");
         let groth16_proof: SP1ProofWithPublicValues =
             deserialize_from_bincode_bytes(&groth16_proof_vec)
                 .expect("Failed to deserialize proof");
 
-        let prover = &cpu_agent.prover;
+        let prover = &agent.prover;
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(elf_path_packed)?;
+        let vk = agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
@@ -56,14 +55,13 @@ mod tests {
 
     #[test]
     fn test_verify_groth16_proof() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed =
             serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize")?;
 
-        let vk = cpu_agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
 
         let groth16_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_groth16_proof.bin");
@@ -79,7 +77,7 @@ mod tests {
             serialize_to_msgpack_bytes(&verify_inputs).context("Failed to serialize")?;
 
         let verify_result =
-            cpu_agent.verify_groth16(verify_inputs_packed).context("Failed to verify")?;
+            agent.verify_groth16(verify_inputs_packed).context("Failed to verify")?;
         let verify_success: bool =
             deserialize_from_bincode_bytes(&verify_result).context("Failed to deserialize")?;
         assert!(verify_success, "Groth16 proof verification should succeed");

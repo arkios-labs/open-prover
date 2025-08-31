@@ -13,8 +13,7 @@ mod tests {
 
     #[test]
     fn test_e2e_plonk_proof_generation() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
@@ -26,16 +25,15 @@ mod tests {
         let inputs_packed =
             serialize_to_msgpack_bytes(&inputs).expect("Failed to serialize inputs");
 
-        let plonk_proof_vec =
-            cpu_agent.plonk(inputs_packed).expect("Failed to generate plonk proof");
+        let plonk_proof_vec = agent.plonk(inputs_packed).expect("Failed to generate plonk proof");
         let plonk_proof: SP1ProofWithPublicValues =
             deserialize_from_bincode_bytes(&plonk_proof_vec).expect("Failed to deserialize proof");
 
-        let prover = &cpu_agent.prover;
+        let prover = &agent.prover;
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(elf_path_packed)?;
+        let vk = agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
@@ -55,13 +53,12 @@ mod tests {
 
     #[test]
     fn test_verify_plonk_proof() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
 
         let plonk_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_plonk_proof.bin");
@@ -73,7 +70,7 @@ mod tests {
         let verify_inputs: Vec<Vec<u8>> = vec![plonk_proof, vk, pv_path_packed];
         let verify_inputs_packed = serialize_to_msgpack_bytes(&verify_inputs)?;
 
-        let verify_result = cpu_agent.verify_plonk(verify_inputs_packed)?;
+        let verify_result = agent.verify_plonk(verify_inputs_packed)?;
         let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)?;
         assert!(verify_success, "Plonk proof verification should succeed");
 

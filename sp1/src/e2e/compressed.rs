@@ -92,8 +92,7 @@ mod tests {
 
     #[test]
     fn test_e2e_binary_tree_variants() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         // Case 1: single record (without compress operation)
         let case_single = E2eCase {
@@ -110,7 +109,7 @@ mod tests {
         };
 
         for case in [&case_single, &case_multi] {
-            run_e2e_case(&cpu_agent, &metadata_dir, case)
+            run_e2e_case(&agent, &metadata_dir, case)
                 .with_context(|| format!("case failed: elf_rel={}", case.elf_path))?;
         }
         Ok(())
@@ -118,8 +117,7 @@ mod tests {
 
     #[test]
     fn test_wrap_compress_proof() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
         let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
@@ -131,20 +129,19 @@ mod tests {
         let inputs: Vec<Vec<u8>> = vec![pv_path_packed, compressed_proof];
         let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
 
-        let _wrapped_compress_proof = cpu_agent.wrap_compress(inputs_packed)?;
+        let _wrapped_compress_proof = agent.wrap_compress(inputs_packed)?;
 
         Ok(())
     }
 
     #[test]
     fn test_verify_compress_proof() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(elf_path_packed).context("Failed to setup")?;
+        let vk = agent.setup(elf_path_packed).context("Failed to setup")?;
 
         let compressed_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin");
@@ -154,7 +151,7 @@ mod tests {
         let verify_inputs: Vec<Vec<u8>> = vec![compressed_proof, vk];
         let verify_inputs_packed = serialize_to_msgpack_bytes(&verify_inputs)?;
 
-        let verify_result = cpu_agent.verify_compress(verify_inputs_packed)?;
+        let verify_result = agent.verify_compress(verify_inputs_packed)?;
         let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)?;
         assert!(verify_success, "Compressed proof verification should succeed");
 

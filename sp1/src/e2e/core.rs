@@ -14,8 +14,7 @@ mod tests {
 
     #[test]
     fn test_e2e_fibonacci_core_proof_generation() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
         let pv = fs::read(&pv_path)?;
@@ -25,13 +24,13 @@ mod tests {
         let stdin = fs::read(&stdin_path)?;
         let stdin: SP1Stdin = deserialize_from_bincode_bytes(&stdin)?;
 
-        let prover = &cpu_agent.prover;
+        let prover = &agent.prover;
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(elf_path_packed.clone())?;
+        let vk = agent.setup(elf_path_packed.clone())?;
         for i in 1..=3 {
             let record_path =
                 metadata_dir.join(format!("record/fibonacci-elf_shardsize_14_record_{}.bin", i));
@@ -41,7 +40,7 @@ mod tests {
                 vec![record_path_serialized, elf_path_packed.clone(), vk.clone()];
             let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
 
-            let shard_proof_serialized = cpu_agent.prove(inputs_packed).unwrap();
+            let shard_proof_serialized = agent.prove(inputs_packed).unwrap();
             let shard_proof: ShardProof<CoreSC> =
                 deserialize_from_bincode_bytes(&shard_proof_serialized).unwrap();
 
@@ -55,7 +54,7 @@ mod tests {
             cycles: 0,
         };
 
-        let vk = cpu_agent.setup(elf_path_packed)?;
+        let vk = agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
@@ -68,8 +67,7 @@ mod tests {
 
     #[test]
     fn test_e2e_keccak_core_proof_generation() -> anyhow::Result<()> {
-        let (metadata_dir, cpu_agent) =
-            setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/keccak-elf_shardsize_14_pv.bin");
         let pv = fs::read(&pv_path)?;
@@ -79,13 +77,13 @@ mod tests {
         let stdin = fs::read(&stdin_path)?;
         let stdin: SP1Stdin = deserialize_from_bincode_bytes(&stdin)?;
 
-        let prover = &cpu_agent.prover;
+        let prover = &agent.prover;
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/keccak-elf");
         let elf_path_packed = serialize_to_msgpack_bytes(&elf_path)?;
 
-        let vk = cpu_agent.setup(elf_path_packed.clone())?;
+        let vk = agent.setup(elf_path_packed.clone())?;
         for i in 1..=4 {
             let record_path =
                 metadata_dir.join(format!("record/keccak-elf_shardsize_14_record_{}.bin", i));
@@ -95,7 +93,7 @@ mod tests {
                 vec![record_path_serialized, elf_path_packed.clone(), vk.clone()];
             let inputs_packed = serialize_to_msgpack_bytes(&inputs).unwrap();
 
-            let shard_proof_serialized = cpu_agent.prove(inputs_packed).unwrap();
+            let shard_proof_serialized = agent.prove(inputs_packed).unwrap();
             let shard_proof: ShardProof<CoreSC> =
                 deserialize_from_bincode_bytes(&shard_proof_serialized).unwrap();
 
@@ -109,7 +107,7 @@ mod tests {
             cycles: 0,
         };
 
-        let vk = cpu_agent.setup(elf_path_packed)?;
+        let vk = agent.setup(elf_path_packed)?;
         let vk: StarkVerifyingKey<CoreSC> = deserialize_from_bincode_bytes(&vk)?;
         let vk = SP1VerifyingKey { vk };
 
