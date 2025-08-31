@@ -1,9 +1,9 @@
 use crate::tasks::{
-    Agent, CompressInput, Groth16Input, PlonkInput, ProveInput, ProveLiftInput, SetupInput,
-    ShrinkWrapInput, Sp1Agent, VerifyCompressInput, VerifyGroth16Input, VerifyPlonkInput,
-    WrapCompressInput,
+    Agent, ClusterProverComponents, CompressInput, Groth16Input, PlonkInput, ProveInput,
+    ProveLiftInput, SetupInput, ShrinkWrapInput, Sp1Agent, Traces, VerifyCompressInput,
+    VerifyGroth16Input, VerifyPlonkInput, WrapCompressInput,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use cfg_if::cfg_if;
 use common::serialization::bincode::{
     Bincode, deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
@@ -12,30 +12,43 @@ use common::serialization::mpk::Msgpack;
 use common::serialization::{ArgBytes, NestedArgBytes};
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
-use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
+use sp1_core_executor::{ExecutionRecord, RiscvAirId, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
+use sp1_prover::shapes::SP1CompressProgramShape;
 use sp1_prover::{
-    CoreSC, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1PublicValues,
+    CoreSC, DeviceProvingKey, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1PublicValues,
     SP1RecursionProverError, SP1VerifyingKey,
 };
-use sp1_recursion_circuit::machine::{SP1CompressWitnessValues, SP1RecursionWitnessValues};
+use sp1_recursion_circuit::machine::{
+    SP1CompressWithVkeyShape, SP1CompressWitnessValues, SP1DeferredWitnessValues,
+    SP1RecursionShape, SP1RecursionWitnessValues,
+};
 use sp1_recursion_circuit::witness::Witnessable;
 use sp1_recursion_compiler::config::InnerConfig;
+use sp1_recursion_core::ExecutionRecord as RecursionExecutionRecord;
+use sp1_recursion_core::RecursionProgram;
 use sp1_recursion_core::air::RecursionPublicValues;
 use sp1_sdk::install::try_install_circuit_artifacts;
 use sp1_sdk::{SP1Proof, SP1ProofWithPublicValues};
+use sp1_stark::air::MachineAir;
+use sp1_stark::baby_bear_poseidon2::BabyBearPoseidon2;
 use sp1_stark::septic_digest::SepticDigest;
-use sp1_stark::{Challenge, DIGEST_SIZE, MachineProver, SP1ProverOpts, StarkGenericConfig, Val};
+use sp1_stark::{
+    Challenge, DIGEST_SIZE, MachineProver, SP1ProverOpts, ShardProof, StarkGenericConfig,
+    StarkVerifyingKey, Val,
+};
 use std::any::Any;
 use std::borrow::Borrow;
 use std::fs;
 use std::slice::from_mut;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::info;
+use tracing::{debug, info};
 
 #[cfg(feature = "gpu")]
 use sp1_stark::MachineProvingKey;
+use sp1_stark::shape::OrderedShape;
 
 impl Sp1Agent {
     pub fn new() -> Result<Self> {
@@ -190,74 +203,38 @@ impl Agent for Sp1Agent {
         let is_complete = is_first_shard && has_no_next_record;
         let deferred_digest = [Val::<CoreSC>::zero(); DIGEST_SIZE];
 
-        let recursion_witness = SP1RecursionWitnessValues {
+        let witness = SP1CircuitWitness::Core(SP1RecursionWitnessValues {
             vk,
             shard_proofs: vec![shard_proof],
             reconstruct_deferred_digest: deferred_digest,
             is_complete,
             is_first_shard,
             vk_root: self.prover.recursion_vk_root,
+        });
+
+        let proof_shape = {
+            let chips = self.prover.core_prover.shard_chips(&record).collect::<Vec<_>>();
+            let shape = record.shape.as_ref().expect("shape not set");
+
+            let mut heights = Vec::with_capacity(chips.len());
+            for chip in chips.into_iter() {
+                let id = RiscvAirId::from_str(&chip.name()).unwrap();
+                let height = shape.log2_height(&id).unwrap();
+                heights.push((chip.name(), height));
+            }
+            OrderedShape::from_log2_heights(&heights)
         };
 
-        let witness = SP1CircuitWitness::Core(recursion_witness);
+        let compress_shape = SP1CompressProgramShape::Recursion(SP1RecursionShape {
+            proof_shapes: vec![proof_shape],
+            is_complete,
+        });
+        let program = self.prover.program_from_shape(compress_shape, None);
 
-        let (program, witness_stream) = match witness {
-            SP1CircuitWitness::Core(input) => {
-                let mut witness_stream = Vec::new();
-                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
-                (self.prover.recursion_program(&input), witness_stream)
-            }
-            SP1CircuitWitness::Deferred(input) => {
-                let mut witness_stream = Vec::new();
-                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
-                (self.prover.deferred_program(&input), witness_stream)
-            }
-            SP1CircuitWitness::Compress(input) => {
-                let mut witness_stream = Vec::new();
-                let input_with_merkle = self.prover.make_merkle_proofs(input);
-                Witnessable::<InnerConfig>::write(&input_with_merkle, &mut witness_stream);
-                (self.prover.compress_program(&input_with_merkle), witness_stream)
-            }
-        };
+        let reduce_proof = self
+            .full_recursion(program, witness, self.prover_opts, None)
+            .context("Failed to reduce proof")?;
 
-        // Step 5: Run recursive prover
-        let mut runtime =
-            sp1_recursion_core::runtime::Runtime::<Val<InnerSC>, Challenge<InnerSC>, _>::new(
-                program.clone(),
-                self.prover.compress_prover.config().perm.clone(),
-            );
-        runtime.witness_stream = witness_stream.into();
-        runtime
-            .run()
-            .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
-            .context("Failed to run")?;
-
-        let record = runtime.record;
-
-        // Step 6: Compress proof
-        let mut records = vec![record];
-        self.prover.compress_prover.machine().generate_dependencies(
-            &mut records,
-            &self.prover_opts.recursion_opts,
-            None,
-        );
-        let record = records.into_iter().next().unwrap();
-        let traces = self.prover.compress_prover.generate_traces(&record);
-
-        let (_, vk) = self.prover.compress_prover.setup(&program);
-        let pk = self.prover.compress_prover.pk_from_vk(&program, &vk);
-        let mut challenger = self.prover.compress_prover.config().challenger();
-        pk.observe_into(&mut challenger);
-
-        let data = self.prover.compress_prover.commit(&record, traces);
-        let proof = self
-            .prover
-            .compress_prover
-            .open(&pk, data, &mut challenger)
-            .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
-            .context("Failed to open with compress_prover")?;
-
-        let reduce_proof: SP1ReduceProof<InnerSC> = SP1ReduceProof { vk, proof };
         let serialized = serialize_to_bincode_bytes(&reduce_proof)
             .context("Failed to serialize reduce_proof")?;
 
@@ -289,71 +266,16 @@ impl Agent for Sp1Agent {
             && first_pv.start_reconstruct_deferred_digest == [BabyBear::zero(); DIGEST_SIZE]
             && zero_sum;
 
-        // Step 1: Prepare witness and program
-        let compress_input = SP1CompressWitnessValues {
+        let witness = SP1CircuitWitness::Compress(SP1CompressWitnessValues {
             vks_and_proofs: vec![(left.vk, left.proof), (right.vk, right.proof)],
             is_complete,
-        };
+        });
 
-        let witness = SP1CircuitWitness::Compress(compress_input);
+        let reduce_proof = self
+            .setup_and_prove_compress(witness, self.prover_opts)
+            .context("Failed to setup and prove compress")?;
 
-        let mut witness_stream = Vec::new();
-        let program = match witness {
-            SP1CircuitWitness::Core(input) => {
-                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
-                self.prover.recursion_program(&input)
-            }
-            SP1CircuitWitness::Deferred(input) => {
-                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
-                self.prover.deferred_program(&input)
-            }
-            SP1CircuitWitness::Compress(input) => {
-                let input_with_merkle = self.prover.make_merkle_proofs(input.clone());
-                Witnessable::<InnerConfig>::write(&input_with_merkle, &mut witness_stream);
-                self.prover.compress_program(&input_with_merkle)
-            }
-        };
-
-        // Step 2: Setup
-        let (pk, vk) = self.prover.compress_prover.setup(&program);
-        let mut challenger = self.prover.compress_prover.config().challenger();
-        pk.observe_into(&mut challenger);
-
-        // Step 3: Run prover with witness stream
-        let mut runtime =
-            sp1_recursion_core::runtime::Runtime::<Val<InnerSC>, Challenge<InnerSC>, _>::new(
-                program.clone(),
-                self.prover.compress_prover.config().perm.clone(),
-            );
-        runtime.witness_stream = witness_stream.into();
-
-        runtime
-            .run()
-            .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
-            .context("Failed to run")?;
-
-        // Step 4: Post-processing
-        let mut records = vec![runtime.record];
-        self.prover.compress_prover.machine().generate_dependencies(
-            &mut records,
-            &self.prover_opts.recursion_opts,
-            None,
-        );
-        let record = records.into_iter().next().unwrap();
-
-        let traces = self.prover.compress_prover.generate_traces(&record);
-        let data = self.prover.compress_prover.commit(&record, traces);
-
-        let proof = self
-            .prover
-            .compress_prover
-            .open(&pk, data, &mut challenger)
-            .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
-            .context("Failed to open with compress_prover")?;
-
-        // Step 5: Final serialization
-        let sp1_reduce_proof = SP1ReduceProof { vk, proof };
-        let serialized = serialize_to_bincode_bytes(&sp1_reduce_proof)
+        let serialized = serialize_to_bincode_bytes(&reduce_proof)
             .context("Failed to serialize reduce_proof")?;
 
         let elapsed = start_time.elapsed();
@@ -567,5 +489,169 @@ impl Agent for Sp1Agent {
         let elapsed = start_time.elapsed();
         info!("Agent::verify_plonk() took {:?}", elapsed);
         Ok(result)
+    }
+
+    fn setup_and_prove_compress(
+        &self,
+        input: SP1CircuitWitness,
+        opts: SP1ProverOpts,
+    ) -> Result<SP1ReduceProof<InnerSC>, Error> {
+        let (program, input, cache_shape) = {
+            match &input {
+                SP1CircuitWitness::Core(input_core) => {
+                    let program = self.prover.recursion_program(input_core);
+                    (program, input, None)
+                }
+                SP1CircuitWitness::Deferred(input_def) => {
+                    let program = self.prover.deferred_program(input_def);
+                    (program, input, None)
+                }
+                SP1CircuitWitness::Compress(input_comp) => {
+                    let input_with_merkle = self.prover.make_merkle_proofs(input_comp.clone());
+                    let cache_shape = input_with_merkle.shape();
+                    let program = self.prover.compress_program(&input_with_merkle);
+                    (program, SP1CircuitWitness::Compress(input_comp.clone()), Some(cache_shape))
+                }
+            }
+        };
+
+        debug!("program shape: {:?}", program.shape);
+
+        let reduce_proof = self
+            .full_recursion(program, input, opts, cache_shape)
+            .context("Failed to run full recursion")?;
+
+        Ok(reduce_proof)
+    }
+
+    fn full_recursion(
+        &self,
+        program: Arc<RecursionProgram<Val<InnerSC>>>,
+        input: SP1CircuitWitness,
+        opts: SP1ProverOpts,
+        cached_keys: Option<SP1CompressWithVkeyShape>,
+    ) -> Result<SP1ReduceProof<InnerSC>, Error> {
+        let program_clone = program.clone();
+        let record =
+            self.prepare_recursion(program_clone, input).context("Failed to prepare recursion")?;
+
+        let mut records = vec![record];
+
+        // Generate dependencies
+        tracing::info_span!("generate dependencies").in_scope(|| {
+            self.prover.compress_prover.machine().generate_dependencies(
+                &mut records,
+                &opts.recursion_opts,
+                None,
+            )
+        });
+
+        let record = records.into_iter().next().unwrap();
+
+        let generated_traces = self.prover.compress_prover.generate_traces(&record);
+
+        let record_and_traces = (record, generated_traces);
+
+        let reduce_proof = self.prove_recursion(program, record_and_traces, cached_keys)?;
+
+        Ok(reduce_proof)
+    }
+
+    fn prepare_recursion(
+        &self,
+        program: Arc<RecursionProgram<Val<InnerSC>>>,
+        input: SP1CircuitWitness,
+    ) -> Result<RecursionExecutionRecord<Val<InnerSC>>, Error> {
+        let mut witness_stream = Vec::new();
+
+        let witness_stream = tracing::info_span!("Get witness stream").in_scope(|| match input {
+            SP1CircuitWitness::Core(input) => {
+                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
+                witness_stream
+            }
+            SP1CircuitWitness::Deferred(input) => {
+                Witnessable::<InnerConfig>::write(&input, &mut witness_stream);
+                witness_stream
+            }
+            SP1CircuitWitness::Compress(input) => {
+                let input_with_merkle = self.prover.make_merkle_proofs(input);
+                Witnessable::<InnerConfig>::write(&input_with_merkle, &mut witness_stream);
+                witness_stream
+            }
+        });
+
+        let mut runtime =
+            sp1_recursion_core::runtime::Runtime::<Val<InnerSC>, Challenge<InnerSC>, _>::new(
+                program,
+                self.prover.compress_prover.config().perm.clone(),
+            );
+        runtime.witness_stream = witness_stream.into();
+        runtime
+            .run()
+            .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
+            .context("Failed to run")?;
+
+        Ok(runtime.record)
+    }
+
+    fn prove_recursion(
+        &self,
+        program: Arc<RecursionProgram<Val<InnerSC>>>,
+        record_and_traces: (RecursionExecutionRecord<Val<InnerSC>>, Traces),
+        cache_shape: Option<SP1CompressWithVkeyShape>,
+    ) -> Result<SP1ReduceProof<InnerSC>, Error> {
+        // Setup the program
+        let (ref pk, ref vk) = *cache_shape
+            .map(|shape| self.get_compress_keys(shape, program.clone()))
+            .unwrap_or_else(|| {
+                let (pk, vk) = tracing::info_span!("Setup compress program")
+                    .in_scope(|| self.prover.compress_prover.setup(&program));
+                Arc::new((pk, vk))
+            });
+
+        let mut challenger = self.prover.compress_prover.config().challenger();
+        pk.observe_into(&mut challenger);
+
+        let (record, traces) = record_and_traces;
+
+        // Commit to the record and traces
+        let data = tracing::info_span!("commit")
+            .in_scope(|| self.prover.compress_prover.commit(&record, traces));
+
+        drop(record);
+
+        let proof = tracing::info_span!("open").in_scope(|| {
+            self.prover
+                .compress_prover
+                .open(pk, data, &mut challenger)
+                .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
+        })?;
+
+        let reduce_proof = SP1ReduceProof { proof, vk: vk.clone() };
+        Ok(reduce_proof)
+    }
+
+    fn get_compress_keys(
+        &self,
+        _shape: SP1CompressWithVkeyShape,
+        program: Arc<RecursionProgram<Val<InnerSC>>>,
+    ) -> Arc<(DeviceProvingKey<ClusterProverComponents>, StarkVerifyingKey<InnerSC>)> {
+        Arc::from(self.prover.compress_prover.setup(&program))
+    }
+
+    fn prove_deferred_leaves(
+        &self,
+        vk: &StarkVerifyingKey<InnerSC>,
+        vks_and_proofs: Vec<(StarkVerifyingKey<BabyBearPoseidon2>, ShardProof<BabyBearPoseidon2>)>,
+    ) -> Result<(Vec<SP1DeferredWitnessValues<InnerSC>>, [BabyBear; DIGEST_SIZE]), Error> {
+        let reduce_proofs: Vec<SP1ReduceProof<BabyBearPoseidon2>> = vks_and_proofs
+            .into_iter()
+            .map(|(vk, shard_proof)| SP1ReduceProof { vk, proof: shard_proof })
+            .collect();
+
+        let (deferred_inputs, deferred_digest) =
+            self.prover.get_recursion_deferred_inputs(vk, &reduce_proofs, 1);
+
+        Ok((deferred_inputs, deferred_digest))
     }
 }
