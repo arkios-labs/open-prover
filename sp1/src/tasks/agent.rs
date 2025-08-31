@@ -16,8 +16,8 @@ use sp1_core_executor::{ExecutionRecord, RiscvAirId, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
 use sp1_prover::shapes::SP1CompressProgramShape;
 use sp1_prover::{
-    CoreSC, DeviceProvingKey, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1PublicValues,
-    SP1RecursionProverError, SP1VerifyingKey,
+    CoreSC, DeviceProvingKey, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1Prover,
+    SP1PublicValues, SP1RecursionProverError, SP1VerifyingKey,
 };
 use sp1_recursion_circuit::machine::{
     SP1CompressWithVkeyShape, SP1CompressWitnessValues, SP1DeferredWitnessValues,
@@ -39,10 +39,11 @@ use sp1_stark::{
 };
 use std::any::Any;
 use std::borrow::Borrow;
+use std::collections::BTreeMap;
 use std::fs;
 use std::slice::from_mut;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use tracing::{debug, info};
 
@@ -54,14 +55,25 @@ impl Sp1Agent {
     pub fn new() -> Result<Self> {
         cfg_if! {
             if #[cfg(feature = "gpu")] {
-                let inner_prover = moongate_prover::SP1GpuProver::new();
+                let inner_prover: SP1Prover<ClusterProverComponents> = moongate_prover::SP1GpuProver::new();
             } else {
-                let inner_prover = sp1_prover::SP1Prover::new();
+                let inner_prover: SP1Prover<ClusterProverComponents> = SP1Prover::new();
             }
         }
         let prover = Arc::new(inner_prover);
 
-        Ok(Self { prover, prover_opts: SP1ProverOpts::default() })
+        let mut compress_keys = BTreeMap::new();
+
+        for (shape, program) in prover.join_programs_map.iter() {
+            let (pk, vk) = prover.compress_prover.setup(program);
+            compress_keys.insert(shape.clone(), Arc::new((pk, vk)));
+        }
+
+        Ok(Self {
+            prover,
+            prover_opts: SP1ProverOpts::default(),
+            compress_keys: RwLock::new(compress_keys),
+        })
     }
 }
 
@@ -633,10 +645,19 @@ impl Agent for Sp1Agent {
 
     fn get_compress_keys(
         &self,
-        _shape: SP1CompressWithVkeyShape,
+        shape: SP1CompressWithVkeyShape,
         program: Arc<RecursionProgram<Val<InnerSC>>>,
     ) -> Arc<(DeviceProvingKey<ClusterProverComponents>, StarkVerifyingKey<InnerSC>)> {
-        Arc::from(self.prover.compress_prover.setup(&program))
+        {
+            let read = self.compress_keys.read().unwrap();
+            if let Some(keys) = read.get(&shape) {
+                return keys.clone();
+            }
+        }
+        let mut write = self.compress_keys.write().unwrap();
+        let keys = Arc::new(self.prover.compress_prover.setup(&program));
+        write.insert(shape, keys.clone());
+        keys
     }
 
     fn prove_deferred_leaves(

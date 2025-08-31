@@ -12,7 +12,8 @@ use sp1_sdk::SP1ProofWithPublicValues;
 use sp1_stark::baby_bear_poseidon2::BabyBearPoseidon2;
 use sp1_stark::{SP1ProverOpts, ShardProof, StarkVerifyingKey, Val};
 use std::any::Any;
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, RwLock};
 
 mod agent;
 
@@ -21,9 +22,12 @@ pub type ClusterProverComponents = moongate_prover::components::GpuProverCompone
 #[cfg(not(feature = "gpu"))]
 pub type ClusterProverComponents = sp1_prover::components::CpuProverComponents;
 
+pub type CachedKeys = Arc<(DeviceProvingKey<ClusterProverComponents>, StarkVerifyingKey<InnerSC>)>;
+
 pub struct Sp1Agent {
     pub prover: Arc<SP1Prover<ClusterProverComponents>>,
     pub prover_opts: SP1ProverOpts,
+    pub compress_keys: RwLock<BTreeMap<SP1CompressWithVkeyShape, CachedKeys>>,
 }
 
 pub trait Agent: Send + Sync {
