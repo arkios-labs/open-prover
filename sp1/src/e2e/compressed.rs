@@ -12,7 +12,7 @@ mod tests {
     struct E2eCase<'a> {
         elf_path: &'a str,
         record_glob_fmt: &'a str,
-        record_len: u32,
+        record_len: usize,
     }
 
     fn compress_binary_tree(agent: &impl Agent, mut proofs: Vec<Vec<u8>>) -> Result<Vec<u8>> {
@@ -51,7 +51,7 @@ mod tests {
             serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize elf")?;
         let vk_bytes = agent.setup(elf_path_packed.clone()).context("Failed to setup")?;
 
-        let mut lifted: Vec<Vec<u8>> = Vec::with_capacity(case.record_len as usize);
+        let mut lifted: Vec<Vec<u8>> = Vec::with_capacity(case.record_len);
 
         for i in 1..=case.record_len {
             let record_path = metadata_dir.join(case.record_glob_fmt.replace("{}", &i.to_string()));
