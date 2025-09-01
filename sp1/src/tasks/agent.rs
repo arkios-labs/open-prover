@@ -77,8 +77,8 @@ impl Agent for Sp1Agent {
         let elf_bytes = fs::read(&elf_path)
             .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
 
-        let elf_deserialized: Vec<u8> = deserialize_from_bincode_bytes(&elf_bytes)
-            .context("Failed to bincode deserialize ELF")?;
+        let elf_deserialized: Vec<u8> =
+            deserialize_from_bincode_bytes(&elf_bytes).context("Failed to deserialize ELF")?;
 
         let (_, _pkey, _, vkey) = self.prover.setup(&elf_deserialized);
         let vkey = serialize_to_bincode_bytes(&vkey).context("Failed to serialize vkey")?;
@@ -98,11 +98,11 @@ impl Agent for Sp1Agent {
             .with_context(|| format!("Failed to read record file at {}", record_path))?;
         let elf_bytes = fs::read(&elf_path)
             .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
-        let elf_deserialized: Vec<u8> = deserialize_from_bincode_bytes(&elf_bytes)
-            .context("Failed to bincode deserialize ELF")?;
+        let elf_deserialized: Vec<u8> =
+            deserialize_from_bincode_bytes(&elf_bytes).context("Failed to deserialize ELF")?;
 
         let mut record: ExecutionRecord = deserialize_from_bincode_bytes(&record_bytes)
-            .context("Failed to bincode deserialize record")?;
+            .context("Failed to deserialize record")?;
 
         tracing::debug_span!("generate dependencies").in_scope(|| {
             self.prover.core_prover.machine().generate_dependencies(
@@ -149,7 +149,7 @@ impl Agent for Sp1Agent {
 
         let record = fs::read(&record_path).context("Failed to read record file")?;
         let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&record)
-            .context("Failed to bincode deserialize record")?;
+            .context("Failed to deserialize record")?;
 
         self.prover.core_prover.machine().generate_dependencies(
             from_mut(&mut record),
@@ -164,8 +164,8 @@ impl Agent for Sp1Agent {
 
         // Step 2: Load ELF & generate PK, challenger
         let elf_bytes = fs::read(&elf_path).context("Failed to read ELF file")?;
-        let elf_deserialized: Vec<u8> = deserialize_from_bincode_bytes(&elf_bytes)
-            .context("Failed to bincode deserialize ELF")?;
+        let elf_deserialized: Vec<u8> =
+            deserialize_from_bincode_bytes(&elf_bytes).context("Failed to deserialize ELF")?;
         let program = self.prover.get_program(&elf_deserialized).expect("Failed to get program");
 
         let pk = self.prover.core_prover.pk_from_vk(&program, &vk);
