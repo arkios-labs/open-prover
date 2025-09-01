@@ -49,7 +49,7 @@ mod tests {
         let elf_path: PathBuf = metadata_dir.join(case.elf_path);
         let elf_path_packed =
             serialize_to_msgpack_bytes(&elf_path).context("Failed to serialize elf")?;
-        let vk_bytes = agent.setup(elf_path_packed.clone()).context("Failed to setup engine")?;
+        let vk_bytes = agent.setup(elf_path_packed.clone()).context("Failed to setup")?;
 
         let mut lifted: Vec<Vec<u8>> = Vec::with_capacity(case.record_len as usize);
 

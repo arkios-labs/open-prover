@@ -72,7 +72,7 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         let Msgpack(elf_path): SetupInput =
-            ArgBytes::from_arg_bytes(&input).context("Failed to parse input")?;
+            ArgBytes::from_arg_bytes(&input).context("Failed to parse setup input")?;
 
         let elf_bytes = fs::read(&elf_path)
             .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
@@ -80,11 +80,11 @@ impl Agent for Sp1Agent {
         let elf_deserialized: Vec<u8> =
             deserialize_from_bincode_bytes(&elf_bytes).context("Failed to deserialize ELF")?;
 
-        let (_, _pkey, _, vkey) = self.prover.setup(&elf_deserialized);
-        let vkey = serialize_to_bincode_bytes(&vkey).context("Failed to serialize vkey")?;
+        let (_, _, _, vk) = self.prover.setup(&elf_deserialized);
+        let vk = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
         let elapsed = start_time.elapsed();
         info!("Agent::setup() took {:?}", elapsed);
-        Ok(vkey)
+        Ok(vk)
     }
 
     fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
@@ -92,7 +92,7 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveInput =
-            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse input")?;
+            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse prove input")?;
 
         let record_bytes = fs::read(&record_path)
             .with_context(|| format!("Failed to read record file at {}", record_path))?;
@@ -133,7 +133,8 @@ impl Agent for Sp1Agent {
         let shard_proof = tracing::debug_span!("opening", shard)
             .in_scope(|| self.prover.core_prover.open(&pkey, main_data, &mut challenger).unwrap());
 
-        let serialized = serialize_to_bincode_bytes(&shard_proof).context("Failed to serialize")?;
+        let serialized =
+            serialize_to_bincode_bytes(&shard_proof).context("Failed to serialize shard_proof")?;
         let elapsed = start_time.elapsed();
         info!("Agent::prove() took {:?}", elapsed);
         Ok(serialized)
@@ -146,7 +147,7 @@ impl Agent for Sp1Agent {
         // Step 1: Load & process record
         let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveLiftInput =
             NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse input")?;
+                .context("Failed to parse prove_lift input")?;
 
         let record = fs::read(&record_path).context("Failed to read record file")?;
         let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&record)
@@ -256,9 +257,9 @@ impl Agent for Sp1Agent {
             .map_err(|e| SP1RecursionProverError::RuntimeError(e.to_string()))
             .context("Failed to open with compress_prover")?;
 
-        let recursion_proof: SP1ReduceProof<InnerSC> = SP1ReduceProof { vk, proof };
-        let serialized =
-            serialize_to_bincode_bytes(&recursion_proof).context("Failed to serialize")?;
+        let reduce_proof: SP1ReduceProof<InnerSC> = SP1ReduceProof { vk, proof };
+        let serialized = serialize_to_bincode_bytes(&reduce_proof)
+            .context("Failed to serialize reduce_proof")?;
 
         let elapsed = start_time.elapsed();
         info!("Agent::prove_lift() took {:?}", elapsed);
@@ -272,7 +273,7 @@ impl Agent for Sp1Agent {
 
         let (Bincode(left), Bincode(right)): CompressInput =
             NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse input")?;
+                .context("Failed to parse compress input")?;
 
         let first_pv: &RecursionPublicValues<BabyBear> =
             left.proof.public_values.as_slice().borrow();
@@ -353,7 +354,7 @@ impl Agent for Sp1Agent {
         // Step 5: Final serialization
         let sp1_reduce_proof = SP1ReduceProof { vk, proof };
         let serialized = serialize_to_bincode_bytes(&sp1_reduce_proof)
-            .context("Failed to serialize compressed proof")?;
+            .context("Failed to serialize reduce_proof")?;
 
         let elapsed = start_time.elapsed();
         info!("Agent::compress() took {:?}", elapsed);
@@ -365,7 +366,7 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         let Bincode(reduce_proof): ShrinkWrapInput =
-            ArgBytes::from_arg_bytes(&input).context("Failed to parse input")?;
+            ArgBytes::from_arg_bytes(&input).context("Failed to parse shrink_wrap input")?;
 
         let shrink_proof =
             self.prover.shrink(reduce_proof, self.prover_opts).context("Failed to shrink")?;
@@ -373,7 +374,8 @@ impl Agent for Sp1Agent {
         let wrap_proof =
             self.prover.wrap_bn254(shrink_proof, self.prover_opts).context("Failed to wrap")?;
 
-        let serialized = serialize_to_bincode_bytes(&wrap_proof).context("Failed to serialize")?;
+        let serialized =
+            serialize_to_bincode_bytes(&wrap_proof).context("Failed to serialize wrap_proof")?;
         let elapsed = start_time.elapsed();
         info!("Agent::shrink_wrap() took {:?}", elapsed);
         Ok(serialized)
@@ -384,12 +386,13 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         let (Msgpack(public_values_path), Bincode(wrap_proof)): Groth16Input =
-            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse input")?;
+            NestedArgBytes::from_nested_arg_bytes(&input)
+                .context("Failed to parse groth16 input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
         let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
-            .context("Failed to deserialize public values")?;
+            .context("Failed to deserialize public_values")?;
 
         let groth16_bn254_artifacts = if sp1_prover::build::sp1_dev_mode() {
             sp1_prover::build::try_build_groth16_bn254_artifacts_dev(
@@ -410,7 +413,7 @@ impl Agent for Sp1Agent {
         };
 
         let serialized = serialize_to_bincode_bytes(&groth16_proof_with_public_values)
-            .context("Failed to serialize")?;
+            .context("Failed to serialize groth16_proof")?;
         let elapsed = start_time.elapsed();
         info!("Agent::groth16() took {:?}", elapsed);
         Ok(serialized)
@@ -421,12 +424,12 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         let (Msgpack(public_values_path), Bincode(wrap_proof)): PlonkInput =
-            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse input")?;
+            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse plonk input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
         let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
-            .context("Failed to deserialize public values")?;
+            .context("Failed to deserialize public_values")?;
 
         let plonk_bn254_artifacts = if sp1_prover::build::sp1_dev_mode() {
             sp1_prover::build::try_build_plonk_bn254_artifacts_dev(
@@ -447,7 +450,7 @@ impl Agent for Sp1Agent {
         };
 
         let serialized = serialize_to_bincode_bytes(&plonk_proof_with_public_values)
-            .context("Failed to serialize")?;
+            .context("Failed to serialize plonk_proof")?;
         let elapsed = start_time.elapsed();
         info!("Agent::plonk() took {:?}", elapsed);
         Ok(serialized)
@@ -458,13 +461,14 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         let (Msgpack(public_values_path), Bincode(compress_proof)): WrapCompressInput =
-            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse input")?;
+            NestedArgBytes::from_nested_arg_bytes(&input)
+                .context("Failed to parse wrap_compress input")?;
 
         let public_values_vec = fs::read(&public_values_path)
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
 
         let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
-            .context("Failed to deserialize public values")?;
+            .context("Failed to deserialize public_values")?;
 
         let compressed_proof_with_public_values: SP1ProofWithPublicValues =
             SP1ProofWithPublicValues {
@@ -474,7 +478,7 @@ impl Agent for Sp1Agent {
                 tee_proof: None,
             };
         let serialized = serialize_to_bincode_bytes(&compressed_proof_with_public_values)
-            .expect("Failed to serialize");
+            .expect("Failed to serialize compressed_proof");
         let elapsed = start_time.elapsed();
         info!("Agent::wrap_compress() took {:?}", elapsed);
         Ok(serialized)
@@ -486,7 +490,7 @@ impl Agent for Sp1Agent {
 
         let (Bincode(compressed_proof), Bincode(vk)): VerifyCompressInput =
             NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse input")?;
+                .context("Failed to parse verify_compress input")?;
 
         let vk = SP1VerifyingKey { vk };
 
@@ -505,7 +509,7 @@ impl Agent for Sp1Agent {
         let start_time = Instant::now();
 
         let (Bincode(groth16_proof), (Bincode(vk), Msgpack(public_values_path))): VerifyGroth16Input =
-            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse input")?;
+            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse verify_groth16 input")?;
 
         let vk = SP1VerifyingKey { vk };
 
@@ -513,7 +517,7 @@ impl Agent for Sp1Agent {
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
 
         let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
-            .context("Failed to deserialize public values")?;
+            .context("Failed to deserialize public_values")?;
 
         let groth16_bn254_artifacts = try_install_circuit_artifacts("groth16");
 
@@ -538,7 +542,7 @@ impl Agent for Sp1Agent {
 
         let (Bincode(plonk_proof), (Bincode(vk), Msgpack(public_values_path))): VerifyPlonkInput =
             NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse input")?;
+                .context("Failed to parse verify_plonk input")?;
 
         let vk = SP1VerifyingKey { vk };
 
@@ -546,7 +550,7 @@ impl Agent for Sp1Agent {
             .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
 
         let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
-            .context("Failed to deserialize public values")?;
+            .context("Failed to deserialize public_values")?;
 
         let plonk_bn254_artifacts = try_install_circuit_artifacts("plonk");
 
