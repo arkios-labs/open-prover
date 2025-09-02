@@ -1,49 +1,50 @@
-use crate::serialization::{FormatDeserialize, FromBytes, FromVecBytes};
-use anyhow::Result;
+use crate::serialization::mpk::{deserialize_from_msgpack_bytes, serialize_to_msgpack_bytes};
+use crate::serialization::{ArgBytes, NestedArgBytes};
+use anyhow::{Context, Result, bail};
 use serde::{Serialize, de::DeserializeOwned};
 
 pub fn serialize_to_bincode_bytes<T: Serialize>(item: &T) -> Result<Vec<u8>> {
-    let encoded = bincode::serialize(item)?;
+    let encoded = bincode::serialize(item).context("Failed to serialize to bincode")?;
     Ok(encoded)
 }
 
 pub fn deserialize_from_bincode_bytes<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
-    let decoded = bincode::deserialize(encoded)?;
+    let decoded = bincode::deserialize(encoded).context("Failed to deserialize from bincode")?;
     Ok(decoded)
 }
 
 #[derive(Debug)]
 pub struct Bincode<T>(pub T);
 
-impl<T> FormatDeserialize for Bincode<T>
+impl<T> ArgBytes for Bincode<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned + Serialize,
 {
-    fn deserialize(input: &[u8]) -> anyhow::Result<Self> {
-        let t = deserialize_from_bincode_bytes(input)?;
-        Ok(Bincode(t))
+    fn from_arg_bytes(bytes: &[u8]) -> Result<Self> {
+        let v =
+            deserialize_from_bincode_bytes(bytes).context("Failed to deserialize from bincode")?;
+        Ok(Self(v))
+    }
+    fn to_arg_bytes(&self) -> Result<Vec<u8>> {
+        serialize_to_bincode_bytes(&self.0)
     }
 }
 
-impl<T> FromBytes for Bincode<T>
+impl<T> NestedArgBytes for Bincode<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned + Serialize,
 {
-    fn from_bytes(input: &[u8]) -> anyhow::Result<Self> {
-        let value = deserialize_from_bincode_bytes(input)?;
-        Ok(Bincode(value))
-    }
-}
-
-impl<T> FromVecBytes for Bincode<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    fn from_vec_bytes(inputs: &[Vec<u8>]) -> anyhow::Result<Self> {
-        if inputs.len() != 1 {
-            return Err(anyhow::anyhow!("Expected exactly 1 input for Bincode<T>"));
+    fn from_nested_arg_bytes(input: &[u8]) -> Result<Self> {
+        let chunks: Vec<Vec<u8>> =
+            deserialize_from_msgpack_bytes(input).context("Failed to deserialize from msgpack")?;
+        if chunks.len() != 1 {
+            bail!("Expected exactly one input chunk");
         }
-        let value = deserialize_from_bincode_bytes(&inputs[0])?;
-        Ok(Bincode(value))
+        Self::from_arg_bytes(&chunks[0])
+    }
+
+    fn to_nested_arg_bytes(&self) -> Result<Vec<u8>> {
+        let one = vec![self.to_arg_bytes().context("Failed to get arg")?];
+        serialize_to_msgpack_bytes(&one)
     }
 }

@@ -1,5 +1,5 @@
 use crate::tasks::Agent;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -7,6 +7,7 @@ pub enum Command {
     Setup,
     Prove,
     ProveLift,
+    LiftDefer,
     Compress,
     ShrinkWrap,
     Groth16,
@@ -25,6 +26,7 @@ impl FromStr for Command {
             "SETUP" => Ok(Command::Setup),
             "PROVE" => Ok(Command::Prove),
             "PROVE_LIFT" => Ok(Command::ProveLift),
+            "LIFT_DEFER" => Ok(Command::LiftDefer),
             "COMPRESS" => Ok(Command::Compress),
             "SHRINK_WRAP" => Ok(Command::ShrinkWrap),
             "GROTH16" => Ok(Command::Groth16),
@@ -33,7 +35,7 @@ impl FromStr for Command {
             "VERIFY_COMPRESS" => Ok(Command::VerifyCompress),
             "VERIFY_GROTH16" => Ok(Command::VerifyGroth16),
             "VERIFY_PLONK" => Ok(Command::VerifyPlonk),
-            _ => Err(anyhow::anyhow!("Unknown command type: {}", s)),
+            _ => Err(anyhow!("Unknown command type: {}", s)),
         }
     }
 }
@@ -43,6 +45,7 @@ impl Command {
             Command::Setup => agent.setup(input),
             Command::Prove => agent.prove(input),
             Command::ProveLift => agent.prove_lift(input),
+            Command::LiftDefer => agent.lift_defer(input),
             Command::Compress => agent.compress(input),
             Command::ShrinkWrap => agent.shrink_wrap(input),
             Command::Groth16 => agent.groth16(input),

@@ -67,9 +67,9 @@ impl UnixSocketServer {
         Ok(())
     }
 
-    pub fn handle_connection<F>(&mut self, handler: F) -> anyhow::Result<()>
+    pub fn handle_connection<F>(&mut self, handler: F) -> Result<()>
     where
-        F: Fn(TaskRequest) -> anyhow::Result<TaskResponse>,
+        F: Fn(TaskRequest) -> Result<TaskResponse>,
     {
         let listener = self.listener.as_ref().context("Server not bound")?;
         let (stream, addr) = listener.accept().context("Failed to accept connection")?;

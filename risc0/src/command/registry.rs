@@ -1,5 +1,5 @@
 use crate::tasks::Agent;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,7 +25,7 @@ impl FromStr for Command {
             "UNION" => Ok(Command::Union),
             "KECCAK" => Ok(Command::Keccak),
             "SNARK" => Ok(Command::Snark),
-            _ => Err(anyhow::anyhow!("Unknown command type: {}", s)),
+            _ => Err(anyhow!("Unknown command type: {}", s)),
         }
     }
 }
