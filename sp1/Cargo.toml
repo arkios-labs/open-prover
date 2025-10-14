@@ -40,11 +40,3 @@ default = []
 # Enable GPU support by including moongate-core and moongate-prover dependencies
 # https://github.com/succinctlabs/cluster/blob/bf1c2b2/crates/worker/Cargo.toml#L12
 gpu = ["dep:moongate-core", "dep:moongate-prover"]
-
-[[bin]]
-name = "sp1"
-path = "src/bin/sp1.rs"
-
-[[bin]]
-name = "sp1_socket_server"
-path = "src/bin/sp1_socket_server.rs"
