@@ -6748,6 +6748,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "common",
+ "futures",
  "moongate-core",
  "moongate-prover",
  "p3-baby-bear",

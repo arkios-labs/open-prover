@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::e2e::tests::{setup, setup_agent_and_metadata_dir};
-    use crate::tasks::Agent;
     use anyhow::{Context, Result};
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,

@@ -6,7 +6,8 @@ mod wrap;
 
 #[cfg(test)]
 pub mod tests {
-    use crate::tasks::{Agent, SetupInput, SetupOutput, Sp1Agent};
+    use crate::tasks::agent::Sp1Agent;
+    use crate::tasks::{SetupInput, SetupOutput};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::NestedArgBytes;
@@ -29,7 +30,7 @@ pub mod tests {
     }
 
     pub fn setup(
-        agent: &impl Agent,
+        agent: &Sp1Agent,
         elf_path: &PathBuf,
         stdin_path: &PathBuf,
     ) -> Result<(StarkVerifyingKey<CoreSC>, Vec<SP1DeferredWitnessValues<InnerSC>>, [BabyBear; 8])>

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::e2e::tests::{setup, setup_agent_and_metadata_dir};
-    use crate::tasks::Agent;
+    use crate::tasks::agent::Sp1Agent;
     use anyhow::{Context, Result, anyhow};
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
@@ -18,7 +18,7 @@ mod tests {
         record_len: usize,
     }
 
-    fn compress_binary_tree(agent: &impl Agent, mut proofs: Vec<Vec<u8>>) -> Result<Vec<u8>> {
+    fn compress_binary_tree(agent: &Sp1Agent, mut proofs: Vec<Vec<u8>>) -> Result<Vec<u8>> {
         let mut height = 0;
         let mut next = Vec::with_capacity(proofs.len());
         while proofs.len() > 1 {
@@ -48,7 +48,7 @@ mod tests {
         proofs.pop().ok_or_else(|| anyhow!("No final proof generated"))
     }
 
-    fn run_e2e_case(agent: &impl Agent, metadata_dir: &Path, case: &E2eCase) -> Result<()> {
+    fn run_e2e_case(agent: &Sp1Agent, metadata_dir: &Path, case: &E2eCase) -> Result<()> {
         let elf_path: PathBuf = metadata_dir.join(case.elf_path);
         let stdin_path: PathBuf = metadata_dir.join(case.stdin_path);
 
