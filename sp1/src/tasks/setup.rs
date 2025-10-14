@@ -5,6 +5,7 @@ use common::serialization::NestedArgBytes;
 use common::serialization::bincode::{Bincode, deserialize_from_bincode_bytes};
 use common::serialization::mpk::Msgpack;
 use sp1_core_machine::io::SP1Stdin;
+use sp1_stark::{MachineProver, StarkGenericConfig};
 use std::fs;
 use std::time::Instant;
 use tracing::info;
@@ -38,8 +39,13 @@ impl Sp1Agent {
             )
             .context("Failed to prove deferred leaves")?;
 
-        let setup_output: SetupOutput =
-            (Bincode(vkey.vk), (Msgpack(deferred_inputs), Bincode(deferred_digest)));
+        let mut challenger = self.prover.core_prover.machine().config().challenger();
+        vkey.vk.observe_into(&mut challenger);
+
+        let setup_output: SetupOutput = (
+            Bincode(vkey.vk),
+            (Msgpack(deferred_inputs), (Bincode(deferred_digest), Bincode(challenger))),
+        );
 
         let serialized = NestedArgBytes::to_nested_arg_bytes(&setup_output)
             .context("Failed to serialize setup output")?;

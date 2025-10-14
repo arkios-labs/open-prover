@@ -34,7 +34,7 @@ mod tests {
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
-        let (vk, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
         let vk = SP1VerifyingKey { vk };
 
         let pv = fs::read(&pv_path)?;
@@ -60,7 +60,7 @@ mod tests {
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
-        let (vk, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
         let vk_serialized = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
 
         let groth16_proof_path =

@@ -17,6 +17,7 @@ pub mod tests {
     use sp1_prover::{CoreSC, InnerSC};
     use sp1_recursion_circuit::machine::SP1DeferredWitnessValues;
     use sp1_stark::StarkVerifyingKey;
+    use sp1_stark::baby_bear_poseidon2::Challenger;
     use std::path::PathBuf;
 
     pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, Sp1Agent)> {
@@ -33,8 +34,12 @@ pub mod tests {
         agent: &Sp1Agent,
         elf_path: &PathBuf,
         stdin_path: &PathBuf,
-    ) -> Result<(StarkVerifyingKey<CoreSC>, Vec<SP1DeferredWitnessValues<InnerSC>>, [BabyBear; 8])>
-    {
+    ) -> Result<(
+        StarkVerifyingKey<CoreSC>,
+        Vec<SP1DeferredWitnessValues<InnerSC>>,
+        [BabyBear; 8],
+        Challenger,
+    )> {
         let setup_input: SetupInput = (
             Msgpack(elf_path.to_string_lossy().into()),
             Msgpack(stdin_path.to_string_lossy().into()),
@@ -44,9 +49,12 @@ pub mod tests {
 
         let setup_result = agent.setup(setup_input_packed).context("Failed to setup")?;
 
-        let (Bincode(vk), (Msgpack(deferred_inputs), Bincode(deferred_digest))): SetupOutput =
+        let (
+            Bincode(vk),
+            (Msgpack(deferred_inputs), (Bincode(deferred_digest), Bincode(challenger))),
+        ): SetupOutput =
             NestedArgBytes::from_nested_arg_bytes(&setup_result).context("Failed to parse")?;
 
-        Ok((vk, deferred_inputs, deferred_digest))
+        Ok((vk, deferred_inputs, deferred_digest, challenger))
     }
 }

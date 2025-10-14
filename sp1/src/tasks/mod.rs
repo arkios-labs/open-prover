@@ -6,6 +6,7 @@ use sp1_core_executor::SP1ReduceProof;
 use sp1_prover::{CoreSC, InnerSC, OuterSC};
 use sp1_recursion_circuit::machine::SP1DeferredWitnessValues;
 use sp1_sdk::SP1ProofWithPublicValues;
+use sp1_stark::baby_bear_poseidon2::Challenger;
 use sp1_stark::{DIGEST_SIZE, StarkVerifyingKey, Val};
 
 pub mod agent;
@@ -19,14 +20,24 @@ pub type SetupInput = (Msgpack<String>, Msgpack<String>);
 
 pub type SetupOutput = (
     Bincode<StarkVerifyingKey<CoreSC>>,
-    (Msgpack<Vec<SP1DeferredWitnessValues<InnerSC>>>, Bincode<[BabyBear; DIGEST_SIZE]>),
+    (
+        Msgpack<Vec<SP1DeferredWitnessValues<InnerSC>>>,
+        (Bincode<[BabyBear; DIGEST_SIZE]>, Bincode<Challenger>),
+    ),
 );
 
-type ProveInput = (Msgpack<String>, (Msgpack<String>, Bincode<StarkVerifyingKey<CoreSC>>));
+type ProveInput =
+    (Msgpack<String>, (Msgpack<String>, (Bincode<StarkVerifyingKey<CoreSC>>, Bincode<Challenger>)));
 
 type ProveLiftInput = (
     Msgpack<String>,
-    (Msgpack<String>, (Bincode<StarkVerifyingKey<CoreSC>>, Bincode<[BabyBear; DIGEST_SIZE]>)),
+    (
+        Msgpack<String>,
+        (
+            Bincode<StarkVerifyingKey<CoreSC>>,
+            (Bincode<[BabyBear; DIGEST_SIZE]>, Bincode<Challenger>),
+        ),
+    ),
 );
 
 type LiftDeferInput = Msgpack<SP1DeferredWitnessValues<InnerSC>>;

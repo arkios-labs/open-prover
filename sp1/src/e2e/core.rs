@@ -34,16 +34,23 @@ mod tests {
         let elf_path_packed =
             serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
-        let (vk, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (vk, _, _, challenger) =
+            setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
         let vk_serialized = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
+        let challenger =
+            serialize_to_bincode_bytes(&challenger).context("Failed to serialize challenger")?;
         for i in 1..=3 {
             let record_path =
                 metadata_dir.join(format!("record/fibonacci-elf_shardsize_14_record_{}.bin", i));
             let record_path_serialized =
                 serialize_to_msgpack_bytes(&record_path).context("Failed to pack record_path")?;
 
-            let inputs: Vec<Vec<u8>> =
-                vec![record_path_serialized, elf_path_packed.clone(), vk_serialized.clone()];
+            let inputs: Vec<Vec<u8>> = vec![
+                record_path_serialized,
+                elf_path_packed.clone(),
+                vk_serialized.clone(),
+                challenger.clone(),
+            ];
             let inputs_packed =
                 serialize_to_msgpack_bytes(&inputs).context("Failed to pack inputs")?;
 
@@ -92,17 +99,23 @@ mod tests {
         let elf_path_packed =
             serialize_to_msgpack_bytes(&elf_path).context("Failed to pack elf_path")?;
 
-        let (vk, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (vk, _, _, challenger) =
+            setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
         let vk_serialized = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
-
+        let challenger =
+            serialize_to_bincode_bytes(&challenger).context("Failed to serialize challenger")?;
         for i in 1..=4 {
             let record_path =
                 metadata_dir.join(format!("record/keccak-elf_shardsize_14_record_{}.bin", i));
             let record_path_serialized =
                 serialize_to_msgpack_bytes(&record_path).context("Failed to pack record_path")?;
 
-            let inputs: Vec<Vec<u8>> =
-                vec![record_path_serialized, elf_path_packed.clone(), vk_serialized.clone()];
+            let inputs: Vec<Vec<u8>> = vec![
+                record_path_serialized,
+                elf_path_packed.clone(),
+                vk_serialized.clone(),
+                challenger.clone(),
+            ];
             let inputs_packed =
                 serialize_to_msgpack_bytes(&inputs).context("Failed to pack inputs")?;
 

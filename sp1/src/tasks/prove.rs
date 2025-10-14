@@ -14,7 +14,7 @@ use sp1_prover::{CoreSC, SP1CircuitWitness};
 use sp1_recursion_circuit::machine::{SP1RecursionShape, SP1RecursionWitnessValues};
 use sp1_stark::air::MachineAir;
 use sp1_stark::shape::OrderedShape;
-use sp1_stark::{DIGEST_SIZE, MachineProver, StarkGenericConfig, Val};
+use sp1_stark::{DIGEST_SIZE, MachineProver, Val};
 use std::fs;
 use std::slice::from_mut;
 use std::str::FromStr;
@@ -26,7 +26,7 @@ impl Sp1Agent {
         info!("Agent::prove()");
         let start_time = Instant::now();
 
-        let (Msgpack(record_path), (Msgpack(elf_path), Bincode(vk))): ProveInput =
+        let (Msgpack(record_path), (Msgpack(elf_path), (Bincode(vk), Bincode(mut challenger)))): ProveInput =
             NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse prove input")?;
 
         let record_bytes = fs::read(&record_path)
@@ -55,9 +55,6 @@ impl Sp1Agent {
 
         let pkey = self.prover.core_prover.pk_from_vk(&program, &vk);
 
-        let mut challenger = self.prover.core_prover.config().challenger();
-        pkey.observe_into(&mut challenger);
-
         let traces = self.prover.core_prover.generate_traces(&record);
 
         let shard = record.shard();
@@ -80,8 +77,11 @@ impl Sp1Agent {
         let start_time = Instant::now();
 
         // Step 1: Load & process record
-        let (Msgpack(record_path), (Msgpack(elf_path), (Bincode(vk), Bincode(deferred_digest)))): ProveLiftInput =
-            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse prove_lift input")?;
+        let (
+            Msgpack(record_path),
+            (Msgpack(elf_path), (Bincode(vk), (Bincode(deferred_digest), Bincode(mut challenger)))),
+        ): ProveLiftInput = NestedArgBytes::from_nested_arg_bytes(&input)
+            .context("Failed to parse prove_lift input")?;
 
         let record = fs::read(&record_path).context("Failed to read record file")?;
         let mut record = deserialize_from_bincode_bytes::<ExecutionRecord>(&record)
@@ -105,16 +105,13 @@ impl Sp1Agent {
         let program = self.prover.get_program(&elf_deserialized).expect("Failed to get program");
 
         let pk = self.prover.core_prover.pk_from_vk(&program, &vk);
-        let mut challenger = self.prover.core_prover.config().challenger();
-        pk.observe_into(&mut challenger);
 
         // Step 3: Commit and Open
         let main_data = tracing::debug_span!("commit")
             .in_scope(|| self.prover.core_prover.commit(&record, traces));
 
-        let shard_proof = tracing::debug_span!("opening").in_scope(|| {
-            self.prover.core_prover.open(&pk, main_data, &mut challenger.clone()).unwrap()
-        });
+        let shard_proof = tracing::debug_span!("opening")
+            .in_scope(|| self.prover.core_prover.open(&pk, main_data, &mut challenger).unwrap());
 
         // Step 4: Generate recursion witness
         let is_first_shard = record.public_values.shard == 1;

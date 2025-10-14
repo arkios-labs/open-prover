@@ -52,7 +52,7 @@ mod tests {
         let elf_path: PathBuf = metadata_dir.join(case.elf_path);
         let stdin_path: PathBuf = metadata_dir.join(case.stdin_path);
 
-        let (vk, deferred_inputs, deferred_digest) =
+        let (vk, deferred_inputs, deferred_digest, challenger) =
             setup(agent, &elf_path, &stdin_path).context("Failed to setup")?;
 
         let mut lifted: Vec<Vec<u8>> = Vec::with_capacity(case.record_len + deferred_inputs.len());
@@ -67,6 +67,8 @@ mod tests {
         let deferred_digest_serialized = serialize_to_bincode_bytes(&deferred_digest)
             .context("Failed to serialize deferred digest")?;
         let vk_serialized = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
+        let challenger_serialized =
+            serialize_to_bincode_bytes(&challenger).context("Failed to serialize challenger")?;
         for i in 1..=case.record_len {
             let record_path = metadata_dir.join(case.record_glob_fmt.replace("{}", &i.to_string()));
 
@@ -79,6 +81,7 @@ mod tests {
                 &elf_path_packed,
                 &vk_serialized,
                 &deferred_digest_serialized,
+                &challenger_serialized,
             ])
             .context("Failed to pack")?;
 
@@ -171,7 +174,7 @@ mod tests {
 
         let stdin_path = metadata_dir.join("stdin/keccak-elf_shardsize_14_stdin.bin");
 
-        let (vk, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
 
         let compressed_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin");
