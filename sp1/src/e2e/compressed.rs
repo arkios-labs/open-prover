@@ -36,7 +36,7 @@ mod tests {
                         let left_proof = deserialize_from_bincode_bytes(&left)
                             .context("Failed to deserialize left_proof")?;
                         let right_proof = deserialize_from_bincode_bytes(&right)
-                            .context("Failed to deserialize_right_proof")?;
+                            .context("Failed to deserialize right_proof")?;
                         let compress_input = CompressInput { left_proof, right_proof };
 
                         let compress_output =
@@ -61,7 +61,7 @@ mod tests {
         let elf_path: PathBuf = metadata_dir.join(case.elf_path);
         let elf = fs::read(&elf_path).context("Failed to read elf")?;
         let elf: Vec<u8> =
-            deserialize_from_bincode_bytes(&elf).context("Failed to deserialize_elf")?;
+            deserialize_from_bincode_bytes(&elf).context("Failed to deserialize elf")?;
 
         let stdin_path: PathBuf = metadata_dir.join(case.stdin_path);
 
@@ -181,7 +181,7 @@ mod tests {
             fs::read(&reduce_proof_path).context("Failed to read compressed proof")?;
         let reduce_proof: SP1ReduceProof<InnerSC> =
             deserialize_from_bincode_bytes(&reduce_proof)
-                .context("Failed to deserialized compressed_proof")?;
+                .context("Failed to deserialize compressed_proof")?;
 
         let wrap_compress_input = WrapCompressInput { public_values: pv, reduce_proof };
 
