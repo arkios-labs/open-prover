@@ -29,10 +29,7 @@ mod tests {
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
-        let elf = fs::read(&elf_path).context("Failed to read elf")?;
-        let elf: Vec<u8> =
-            deserialize_from_bincode_bytes(&elf).context("Failed to deserialize elf")?;
-        let (vk, _, _, challenger) =
+        let (elf, vk, _, _, challenger) =
             setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
 
         for i in 1..=3 {
@@ -86,10 +83,7 @@ mod tests {
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
         let elf_path = metadata_dir.join("elf/keccak-elf");
-        let elf = fs::read(&elf_path).context("Failed to read elf")?;
-        let elf: Vec<u8> =
-            deserialize_from_bincode_bytes(&elf).context("Failed to deserialize elf")?;
-        let (vk, _, _, challenger) =
+        let (elf, vk, _, _, challenger) =
             setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
 
         for i in 1..=4 {

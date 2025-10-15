@@ -33,7 +33,7 @@ mod tests {
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
-        let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (_, vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
         let vk = SP1VerifyingKey { vk };
 
         let pv = fs::read(&pv_path)?;
@@ -59,7 +59,7 @@ mod tests {
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
-        let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (_, vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
 
         let plonk_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_plonk_proof.bin");

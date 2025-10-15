@@ -59,13 +59,10 @@ mod tests {
 
     fn run_e2e_case(agent: &Sp1Agent, metadata_dir: &Path, case: &E2eCase) -> Result<()> {
         let elf_path: PathBuf = metadata_dir.join(case.elf_path);
-        let elf = fs::read(&elf_path).context("Failed to read elf")?;
-        let elf: Vec<u8> =
-            deserialize_from_bincode_bytes(&elf).context("Failed to deserialize elf")?;
 
         let stdin_path: PathBuf = metadata_dir.join(case.stdin_path);
 
-        let (vk, deferred_inputs, deferred_digest, challenger) =
+        let (elf, vk, deferred_inputs, deferred_digest, challenger) =
             setup(agent, &elf_path, &stdin_path).context("Failed to setup")?;
 
         let mut lifted: Vec<Vec<u8>> = Vec::with_capacity(case.record_len + deferred_inputs.len());
@@ -172,7 +169,7 @@ mod tests {
 
         let stdin_path = metadata_dir.join("stdin/keccak-elf_shardsize_14_stdin.bin");
 
-        let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let (_, vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
         let vk = SP1VerifyingKey { vk };
 
         let reduce_proof_path =

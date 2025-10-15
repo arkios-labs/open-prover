@@ -35,6 +35,7 @@ pub mod tests {
         elf_path: &PathBuf,
         stdin_path: &PathBuf,
     ) -> Result<(
+        Vec<u8>,
         StarkVerifyingKey<CoreSC>,
         Vec<SP1DeferredWitnessValues<InnerSC>>,
         [BabyBear; 8],
@@ -46,7 +47,7 @@ pub mod tests {
         let stdin: SP1Stdin =
             deserialize_from_bincode_bytes(&stdin).context("Failed to deserialize stdin")?;
 
-        let setup_input = SetupInput { elf, stdin };
+        let setup_input = SetupInput { elf: elf.clone(), stdin };
 
         let setup_output = agent.setup(setup_input).context("Failed to setup agent")?;
 
@@ -65,6 +66,8 @@ pub mod tests {
         let challenger = deserialize_from_bincode_bytes(&setup_output.challenger)
             .context("Failed to deserialize challenger")?;
 
-        Ok((vk, deferred_inputs, deferred_digest, challenger))
+        let elf = deserialize_from_bincode_bytes(&elf).context("Failed to deserialize elf")?;
+
+        Ok((elf, vk, deferred_inputs, deferred_digest, challenger))
     }
 }
