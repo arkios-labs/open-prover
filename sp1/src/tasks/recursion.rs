@@ -1,17 +1,15 @@
 use crate::tasks::agent::{ClusterProverComponents, Sp1Agent};
-use crate::tasks::{CompressInput, LiftDeferInput, Traces, VerifyCompressInput, WrapCompressInput};
-use anyhow::{Context, Error, Result};
-use common::serialization::bincode::{
-    Bincode, deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
+use crate::tasks::{
+    CompressInput, CompressOutput, LiftDeferInput, LiftDeferOutput, Traces, VerifyCompressInput,
+    WrapCompressInput, WrapCompressOutput,
 };
-use common::serialization::mpk::Msgpack;
-use common::serialization::{ArgBytes, NestedArgBytes};
+use anyhow::{Context, Error, Result};
+use common::serialization::bincode::serialize_to_bincode_bytes;
 use p3_baby_bear::BabyBear;
 use p3_field::AbstractField;
 use sp1_core_executor::SP1ReduceProof;
 use sp1_prover::{
-    DeviceProvingKey, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1PublicValues,
-    SP1RecursionProverError, SP1VerifyingKey,
+    DeviceProvingKey, InnerSC, SP1_CIRCUIT_VERSION, SP1CircuitWitness, SP1RecursionProverError,
 };
 use sp1_recursion_circuit::machine::{
     SP1CompressWithVkeyShape, SP1CompressWitnessValues, SP1DeferredWitnessValues,
@@ -29,7 +27,6 @@ use sp1_stark::{
     StarkVerifyingKey, Val,
 };
 use std::borrow::Borrow;
-use std::fs;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
@@ -38,37 +35,37 @@ use tracing::{debug, info};
 use sp1_stark::MachineProvingKey;
 
 impl Sp1Agent {
-    pub fn lift_defer(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn lift_defer(&self, lift_defer_input: LiftDeferInput) -> Result<LiftDeferOutput> {
         info!("Agent::lift_defer()");
         let start_time = Instant::now();
 
-        let Msgpack(deferred_input): LiftDeferInput =
-            ArgBytes::from_arg_bytes(&input).context("Failed to parse lift_defer input")?;
-
         let reduce_proof = self
-            .setup_and_prove_compress(SP1CircuitWitness::Deferred(deferred_input), self.prover_opts)
+            .setup_and_prove_compress(
+                SP1CircuitWitness::Deferred(lift_defer_input.deferred_input),
+                self.prover_opts,
+            )
             .context("Failed to prove deferred")?;
 
-        let serialized = serialize_to_bincode_bytes(&reduce_proof)
+        let reduce_proof = serialize_to_bincode_bytes(&reduce_proof)
             .context("Failed to serialize reduce_proof")?;
+        let lift_defer_output = LiftDeferOutput { reduce_proof };
 
         let elapsed = start_time.elapsed();
         info!("Agent::lift_defer() took {:?}", elapsed);
-        Ok(serialized)
+        Ok(lift_defer_output)
     }
 
-    pub fn compress(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn compress(&self, compress_input: CompressInput) -> Result<CompressOutput> {
         info!("Agent::compress()");
         let start_time = Instant::now();
 
-        let (Bincode(left), Bincode(right)): CompressInput =
-            NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse compress input")?;
+        let left_proof = compress_input.left_proof;
+        let right_proof = compress_input.right_proof;
 
         let first_pv: &RecursionPublicValues<BabyBear> =
-            left.proof.public_values.as_slice().borrow();
+            left_proof.proof.public_values.as_slice().borrow();
         let last_pv: &RecursionPublicValues<BabyBear> =
-            right.proof.public_values.as_slice().borrow();
+            right_proof.proof.public_values.as_slice().borrow();
 
         let zero_sum = [first_pv.global_cumulative_sum, last_pv.global_cumulative_sum]
             .into_iter()
@@ -80,7 +77,10 @@ impl Sp1Agent {
             && zero_sum;
 
         let witness = SP1CircuitWitness::Compress(SP1CompressWitnessValues {
-            vks_and_proofs: vec![(left.vk, left.proof), (right.vk, right.proof)],
+            vks_and_proofs: vec![
+                (left_proof.vk, left_proof.proof),
+                (right_proof.vk, right_proof.proof),
+            ],
             is_complete,
         });
 
@@ -88,60 +88,52 @@ impl Sp1Agent {
             .setup_and_prove_compress(witness, self.prover_opts)
             .context("Failed to setup and prove compress")?;
 
-        let serialized = serialize_to_bincode_bytes(&reduce_proof)
+        let reduce_proof = serialize_to_bincode_bytes(&reduce_proof)
             .context("Failed to serialize reduce_proof")?;
+
+        let compress_output = CompressOutput { reduce_proof };
 
         let elapsed = start_time.elapsed();
         info!("Agent::compress() took {:?}", elapsed);
-        Ok(serialized)
+        Ok(compress_output)
     }
 
-    pub fn wrap_compress(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn wrap_compress(
+        &self,
+        wrap_compress_input: WrapCompressInput,
+    ) -> Result<WrapCompressOutput> {
         info!("Agent::wrap_compress()");
         let start_time = Instant::now();
 
-        let (Msgpack(public_values_path), Bincode(compress_proof)): WrapCompressInput =
-            NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse wrap_compress input")?;
-
-        let public_values_vec = fs::read(&public_values_path)
-            .with_context(|| format!("Failed to read record file at {}", public_values_path))?;
-
-        let public_values: SP1PublicValues = deserialize_from_bincode_bytes(&public_values_vec)
-            .context("Failed to deserialize public_values")?;
-
-        let compressed_proof_with_public_values: SP1ProofWithPublicValues =
-            SP1ProofWithPublicValues {
-                proof: SP1Proof::Compressed(Box::from(compress_proof)),
-                public_values,
-                sp1_version: SP1_CIRCUIT_VERSION.to_string(),
-                tee_proof: None,
-            };
-        let serialized = serialize_to_bincode_bytes(&compressed_proof_with_public_values)
+        let compressed_proof: SP1ProofWithPublicValues = SP1ProofWithPublicValues {
+            proof: SP1Proof::Compressed(Box::from(wrap_compress_input.reduce_proof)),
+            public_values: wrap_compress_input.public_values,
+            sp1_version: SP1_CIRCUIT_VERSION.to_string(),
+            tee_proof: None,
+        };
+        let compressed_proof = serialize_to_bincode_bytes(&compressed_proof)
             .expect("Failed to serialize compressed_proof");
+        let wrap_compress_output = WrapCompressOutput { compressed_proof };
+
         let elapsed = start_time.elapsed();
         info!("Agent::wrap_compress() took {:?}", elapsed);
-        Ok(serialized)
+        Ok(wrap_compress_output)
     }
 
-    pub fn verify_compress(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn verify_compress(&self, verify_compress_input: VerifyCompressInput) -> Result<()> {
         info!("Agent::verify_compressed()");
         let start_time = Instant::now();
 
-        let (Bincode(compressed_proof), Bincode(vk)): VerifyCompressInput =
-            NestedArgBytes::from_nested_arg_bytes(&input)
-                .context("Failed to parse verify_compress input")?;
-
-        let vk = SP1VerifyingKey { vk };
-
         self.prover
-            .verify_compressed(&compressed_proof.proof.try_as_compressed().unwrap(), &vk)
+            .verify_compressed(
+                &verify_compress_input.compressed_proof.proof.try_as_compressed().unwrap(),
+                &verify_compress_input.vk,
+            )
             .context("Compressed proof verification failed")?;
 
-        let result = serialize_to_bincode_bytes(&true).context("Failed to serialize result")?;
         let elapsed = start_time.elapsed();
         info!("Agent::verify_compressed() took {:?}", elapsed);
-        Ok(result)
+        Ok(())
     }
 
     fn setup_and_prove_compress(

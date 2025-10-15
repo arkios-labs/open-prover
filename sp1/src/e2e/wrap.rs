@@ -1,10 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::e2e::tests::{setup, setup_agent_and_metadata_dir};
+    use crate::tasks::ShrinkWrapInput;
     use anyhow::{Context, Result};
-    use common::serialization::bincode::{
-        deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
-    };
+    use common::serialization::bincode::deserialize_from_bincode_bytes;
     use sp1_core_executor::SP1ReduceProof;
     use sp1_prover::{InnerSC, SP1VerifyingKey};
     use sp1_sdk::SP1ProofWithPublicValues;
@@ -21,14 +20,14 @@ mod tests {
         let compressed_proof: SP1ProofWithPublicValues =
             deserialize_from_bincode_bytes(&compressed_proof)
                 .context("Failed to deserialize compressed_proof")?;
-        let compressed_proof: SP1ReduceProof<InnerSC> =
+        let reduce_proof: SP1ReduceProof<InnerSC> =
             *compressed_proof.proof.try_as_compressed().unwrap();
-        let compressed_proof_serialized =
-            serialize_to_bincode_bytes(&compressed_proof).expect("Failed to serialize");
 
-        let wrap_proof_vec =
-            agent.shrink_wrap(compressed_proof_serialized).context("Failed to shrink_wrap")?;
-        let wrap_proof = deserialize_from_bincode_bytes(&wrap_proof_vec)
+        let shrink_wrap_input = ShrinkWrapInput { reduce_proof };
+        let shrink_wrap_output =
+            agent.shrink_wrap(shrink_wrap_input).context("Failed to shrink wrap")?;
+
+        let wrap_proof = deserialize_from_bincode_bytes(&shrink_wrap_output.wrap_proof)
             .context("Failed to deserialize wrap_proof")?;
 
         let prover = &agent.prover;

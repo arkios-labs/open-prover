@@ -2,11 +2,14 @@
 mod tests {
     use crate::e2e::tests::{setup, setup_agent_and_metadata_dir};
     use crate::tasks::agent::Sp1Agent;
-    use anyhow::{Context, Result, anyhow};
-    use common::serialization::bincode::{
-        deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
+    use crate::tasks::{
+        CompressInput, LiftDeferInput, ProveLiftInput, VerifyCompressInput, WrapCompressInput,
     };
-    use common::serialization::mpk::serialize_to_msgpack_bytes;
+    use anyhow::{Context, Result, anyhow};
+    use common::serialization::bincode::deserialize_from_bincode_bytes;
+    use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
+    use sp1_prover::{InnerSC, SP1PublicValues, SP1VerifyingKey};
+    use sp1_sdk::SP1ProofWithPublicValues;
     use std::fs;
     use std::path::{Path, PathBuf};
     use tracing::info;
@@ -30,10 +33,16 @@ mod tests {
 
                 while let Some(left) = iter.next() {
                     if let Some(right) = iter.next() {
-                        let inputs = serialize_to_msgpack_bytes(&[&left, &right])
-                            .context("Failed to pack")?;
-                        let out = agent.compress(inputs).context("Failed to compress")?;
-                        next.push(out);
+                        let left_proof = deserialize_from_bincode_bytes(&left)
+                            .context("Failed to deserialize left_proof")?;
+                        let right_proof = deserialize_from_bincode_bytes(&right)
+                            .context("Failed to deserialize_right_proof")?;
+                        let compress_input = CompressInput { left_proof, right_proof };
+
+                        let compress_output =
+                            agent.compress(compress_input).context("Failed to compress")?;
+
+                        next.push(compress_output.reduce_proof);
                     } else {
                         next.push(left);
                     }
@@ -50,6 +59,10 @@ mod tests {
 
     fn run_e2e_case(agent: &Sp1Agent, metadata_dir: &Path, case: &E2eCase) -> Result<()> {
         let elf_path: PathBuf = metadata_dir.join(case.elf_path);
+        let elf = fs::read(&elf_path).context("Failed to read elf")?;
+        let elf: Vec<u8> =
+            deserialize_from_bincode_bytes(&elf).context("Failed to deserialize_elf")?;
+
         let stdin_path: PathBuf = metadata_dir.join(case.stdin_path);
 
         let (vk, deferred_inputs, deferred_digest, challenger) =
@@ -57,54 +70,56 @@ mod tests {
 
         let mut lifted: Vec<Vec<u8>> = Vec::with_capacity(case.record_len + deferred_inputs.len());
 
-        for deferred_input in &deferred_inputs {
-            let deferred_input_packed = serialize_to_msgpack_bytes(deferred_input)
-                .context("Failed to serialize deferred input")?;
-            let lifted_proof = agent.lift_defer(deferred_input_packed).context("Failed to lift")?;
-            lifted.push(lifted_proof);
+        for deferred_input in deferred_inputs {
+            let lift_defer_input = LiftDeferInput { deferred_input };
+
+            let lift_defer_output =
+                agent.lift_defer(lift_defer_input).context("Failed to lift_defer")?;
+
+            lifted.push(lift_defer_output.reduce_proof);
         }
 
-        let deferred_digest_serialized = serialize_to_bincode_bytes(&deferred_digest)
-            .context("Failed to serialize deferred digest")?;
-        let vk_serialized = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
-        let challenger_serialized =
-            serialize_to_bincode_bytes(&challenger).context("Failed to serialize challenger")?;
         for i in 1..=case.record_len {
             let record_path = metadata_dir.join(case.record_glob_fmt.replace("{}", &i.to_string()));
+            let record = fs::read(&record_path).context("Failed to read shard_event")?;
+            let record: ExecutionRecord = deserialize_from_bincode_bytes(&record)
+                .context("Failed to deserialize shard_event")?;
 
-            let record_path_packed =
-                serialize_to_msgpack_bytes(&record_path).context("Failed to pack")?;
-            let elf_path_packed =
-                serialize_to_msgpack_bytes(&elf_path).context("Failed to pack")?;
-            let inputs = serialize_to_msgpack_bytes(&[
-                &record_path_packed,
-                &elf_path_packed,
-                &vk_serialized,
-                &deferred_digest_serialized,
-                &challenger_serialized,
-            ])
-            .context("Failed to pack")?;
+            let prove_lift_input = ProveLiftInput {
+                record,
+                elf: elf.clone(),
+                vk: vk.clone(),
+                deferred_digest,
+                challenger: challenger.clone(),
+            };
 
-            let proof = agent.prove_lift(inputs).context("Failed to prove lift")?;
-            lifted.push(proof);
+            let proof = agent.prove_lift(prove_lift_input).context("Failed to prove lift")?;
+            lifted.push(proof.reduce_proof);
         }
 
         let final_proof = compress_binary_tree(agent, lifted).context("Failed to compress")?;
+        let final_proof = deserialize_from_bincode_bytes(&final_proof)
+            .context("Failed to deserialize reduce_proof")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path).context("Failed to pack")?;
+        let pv = fs::read(&pv_path).context("Failed to read pv_path")?;
+        let pv: SP1PublicValues =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
-        let wrap_compress_inputs: Vec<u8> =
-            serialize_to_msgpack_bytes(&[&pv_path_packed, &final_proof])
-                .context("Failed to pack")?;
-        let wrap_compressed_proof =
-            agent.wrap_compress(wrap_compress_inputs).context("Failed to wrap compress")?;
+        let wrap_compress_input =
+            WrapCompressInput { public_values: pv, reduce_proof: final_proof };
 
-        let wrap_compress_verify_inputs: Vec<u8> =
-            serialize_to_msgpack_bytes(&[&wrap_compressed_proof, &vk_serialized])
-                .context("Failed to pack")?;
+        let wrap_compress_output =
+            agent.wrap_compress(wrap_compress_input).context("Failed to wrap compress")?;
+        let compressed_proof: SP1ProofWithPublicValues =
+            deserialize_from_bincode_bytes(&wrap_compress_output.compressed_proof)
+                .context("Failed to deserialize compressed_proof")?;
+
+        let verify_compress_input =
+            VerifyCompressInput { compressed_proof, vk: SP1VerifyingKey { vk } };
+
         agent
-            .verify_compress(wrap_compress_verify_inputs)
+            .verify_compress(verify_compress_input)
             .context("Compressed proof verification failed")?;
         Ok(())
     }
@@ -149,48 +164,38 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv_path_packed =
-            serialize_to_msgpack_bytes(&pv_path).context("Failed to pack pv_path")?;
-        let compressed_proof_path =
-            metadata_dir.join("proof/fibonacci-elf_shard_size_14_raw_compressed_proof.bin");
-        let compressed_proof =
-            fs::read(&compressed_proof_path).context("Failed to read compressed proof")?;
-
-        let inputs: Vec<Vec<u8>> = vec![pv_path_packed, compressed_proof];
-        let inputs_packed =
-            serialize_to_msgpack_bytes(&inputs).context("Failed to serialize inputs")?;
-
-        let _wrapped_compress_proof =
-            agent.wrap_compress(inputs_packed).context("Failed to wrap_compress")?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_verify_compress_proof() -> Result<()> {
-        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
+        let pv = fs::read(&pv_path).context("Failed to read pv_path")?;
+        let pv: SP1PublicValues =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
         let elf_path = metadata_dir.join("elf/fibonacci-elf");
 
         let stdin_path = metadata_dir.join("stdin/keccak-elf_shardsize_14_stdin.bin");
 
         let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
+        let vk = SP1VerifyingKey { vk };
 
-        let compressed_proof_path =
-            metadata_dir.join("proof/fibonacci-elf_shard_size_14_compressed_proof.bin");
-        let compressed_proof =
-            fs::read(&compressed_proof_path).context("Failed to read compressed proof")?;
-        let vk_serialized = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
+        let reduce_proof_path =
+            metadata_dir.join("proof/fibonacci-elf_shard_size_14_raw_compressed_proof.bin");
+        let reduce_proof =
+            fs::read(&reduce_proof_path).context("Failed to read compressed proof")?;
+        let reduce_proof: SP1ReduceProof<InnerSC> =
+            deserialize_from_bincode_bytes(&reduce_proof)
+                .context("Failed to deserialized compressed_proof")?;
 
-        let verify_inputs: Vec<Vec<u8>> = vec![compressed_proof, vk_serialized];
-        let verify_inputs_packed =
-            serialize_to_msgpack_bytes(&verify_inputs).context("Failed to pack verify_inputs")?;
+        let wrap_compress_input = WrapCompressInput { public_values: pv, reduce_proof };
 
-        let verify_result =
-            agent.verify_compress(verify_inputs_packed).context("Failed to verify_compress")?;
-        let verify_success: bool = deserialize_from_bincode_bytes(&verify_result)
-            .context("Failed to deserialize verify_result")?;
-        assert!(verify_success, "Compressed proof verification should succeed");
+        let wrap_compress_output =
+            agent.wrap_compress(wrap_compress_input).context("Failed to wrap compress")?;
+        let compressed_proof: SP1ProofWithPublicValues =
+            deserialize_from_bincode_bytes(&wrap_compress_output.compressed_proof)
+                .context("Failed to deserialize compressed_proof")?;
+
+        let verify_compress_input = VerifyCompressInput { compressed_proof, vk };
+
+        agent
+            .verify_compress(verify_compress_input)
+            .context("Compressed proof verification failed")?;
 
         Ok(())
     }

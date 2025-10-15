@@ -1,11 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::e2e::tests::{setup, setup_agent_and_metadata_dir};
+    use crate::tasks::{Groth16Input, VerifyGroth16Input};
     use anyhow::{Context, Result};
-    use common::serialization::bincode::{
-        deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
-    };
-    use common::serialization::mpk::serialize_to_msgpack_bytes;
+    use common::serialization::bincode::deserialize_from_bincode_bytes;
     use sp1_prover::{SP1PublicValues, SP1VerifyingKey};
     use sp1_sdk::SP1ProofWithPublicValues;
     use sp1_sdk::install::groth16_circuit_artifacts_dir;
@@ -16,18 +14,20 @@ mod tests {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv_path_packed = serialize_to_msgpack_bytes(&pv_path)?;
+        let pv = fs::read(&pv_path).context("Failed to read public_values")?;
+        let pv =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
         let wrap_proof =
             fs::read(metadata_dir.join("proof/fibonacci-elf_shard_size_14_wrap_proof.bin"))?;
+        let wrap_proof = deserialize_from_bincode_bytes(&wrap_proof)
+            .context("Failed to deserialize wrap_proof")?;
 
-        let inputs: Vec<Vec<u8>> = vec![pv_path_packed, wrap_proof];
-        let inputs_packed =
-            serialize_to_msgpack_bytes(&inputs).expect("Failed to serialize inputs");
+        let groth16_input = Groth16Input { public_values: pv, wrap_proof };
 
-        let groth16_proof_vec = agent.groth16(inputs_packed).expect("Failed to generate proof");
+        let groth16_output = agent.groth16(groth16_input).context("Failed to generate proof")?;
         let groth16_proof: SP1ProofWithPublicValues =
-            deserialize_from_bincode_bytes(&groth16_proof_vec)
+            deserialize_from_bincode_bytes(&groth16_output.groth16_proof)
                 .expect("Failed to deserialize proof");
 
         let prover = &agent.prover;
@@ -35,7 +35,6 @@ mod tests {
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
         let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
-        let vk = SP1VerifyingKey { vk };
 
         let pv = fs::read(&pv_path)?;
         let pv: SP1PublicValues =
@@ -44,7 +43,7 @@ mod tests {
         prover
             .verify_groth16_bn254(
                 &groth16_proof.proof.try_as_groth_16().unwrap(),
-                &vk,
+                &SP1VerifyingKey { vk },
                 &pv,
                 &groth16_circuit_artifacts_dir(),
             )
@@ -61,26 +60,23 @@ mod tests {
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
         let (vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
-        let vk_serialized = serialize_to_bincode_bytes(&vk).context("Failed to serialize vk")?;
 
         let groth16_proof_path =
             metadata_dir.join("proof/fibonacci-elf_shard_size_14_groth16_proof.bin");
-        let groth16_proof_file =
+        let groth16_proof =
             fs::read(&groth16_proof_path).context("Failed to read groth16 proof")?;
+        let groth16_proof = deserialize_from_bincode_bytes(&groth16_proof)
+            .context("Failed to deserialize groth16_proof")?;
 
         let pv_path = metadata_dir.join("public_value/fibonacci-elf_shardsize_14_pv.bin");
-        let pv_path_packed =
-            serialize_to_msgpack_bytes(&pv_path).context("Failed to serialize pv")?;
+        let pv = fs::read(&pv_path).context("Failed to read public_values")?;
+        let pv =
+            deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
-        let verify_inputs: Vec<Vec<u8>> = vec![groth16_proof_file, vk_serialized, pv_path_packed];
-        let verify_inputs_packed =
-            serialize_to_msgpack_bytes(&verify_inputs).context("Failed to serialize")?;
+        let verify_groth16_input =
+            VerifyGroth16Input { groth16_proof, vk: SP1VerifyingKey { vk }, public_values: pv };
 
-        let verify_result =
-            agent.verify_groth16(verify_inputs_packed).context("Failed to verify")?;
-        let verify_success: bool =
-            deserialize_from_bincode_bytes(&verify_result).context("Failed to deserialize")?;
-        assert!(verify_success, "Groth16 proof verification should succeed");
+        agent.verify_groth16(verify_groth16_input).context("Failed to verify proof")?;
 
         Ok(())
     }

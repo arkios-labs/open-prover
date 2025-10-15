@@ -6,18 +6,18 @@ mod wrap;
 
 #[cfg(test)]
 pub mod tests {
+    use crate::tasks::SetupInput;
     use crate::tasks::agent::Sp1Agent;
-    use crate::tasks::{SetupInput, SetupOutput};
     use anyhow::Context;
     use anyhow::Result;
-    use common::serialization::NestedArgBytes;
-    use common::serialization::bincode::Bincode;
-    use common::serialization::mpk::Msgpack;
+    use common::serialization::bincode::deserialize_from_bincode_bytes;
     use p3_baby_bear::BabyBear;
+    use sp1_core_machine::io::SP1Stdin;
     use sp1_prover::{CoreSC, InnerSC};
     use sp1_recursion_circuit::machine::SP1DeferredWitnessValues;
     use sp1_stark::StarkVerifyingKey;
     use sp1_stark::baby_bear_poseidon2::Challenger;
+    use std::fs;
     use std::path::PathBuf;
 
     pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, Sp1Agent)> {
@@ -40,20 +40,30 @@ pub mod tests {
         [BabyBear; 8],
         Challenger,
     )> {
-        let setup_input: SetupInput = (
-            Msgpack(elf_path.to_string_lossy().into()),
-            Msgpack(stdin_path.to_string_lossy().into()),
-        );
-        let setup_input_packed = NestedArgBytes::to_nested_arg_bytes(&setup_input)
-            .context("Failed to serialize setup input")?;
+        let elf = fs::read(elf_path).context("Failed to read elf")?;
 
-        let setup_result = agent.setup(setup_input_packed).context("Failed to setup")?;
+        let stdin = fs::read(stdin_path).context("Failed to read stdin")?;
+        let stdin: SP1Stdin =
+            deserialize_from_bincode_bytes(&stdin).context("Failed to deserialize stdin")?;
 
-        let (
-            Bincode(vk),
-            (Msgpack(deferred_inputs), (Bincode(deferred_digest), Bincode(challenger))),
-        ): SetupOutput =
-            NestedArgBytes::from_nested_arg_bytes(&setup_result).context("Failed to parse")?;
+        let setup_input = SetupInput { elf, stdin };
+
+        let setup_output = agent.setup(setup_input).context("Failed to setup agent")?;
+
+        let vk = deserialize_from_bincode_bytes(&setup_output.vk)
+            .context("Failed to deserialize vkey")?;
+        let deferred_inputs = setup_output
+            .deferred_inputs
+            .into_iter()
+            .map(|input| {
+                deserialize_from_bincode_bytes(&input)
+                    .context("Failed to deserialize deferred_input")
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let deferred_digest = deserialize_from_bincode_bytes(&setup_output.deferred_digest)
+            .context("Failed to deserialize deferred digest")?;
+        let challenger = deserialize_from_bincode_bytes(&setup_output.challenger)
+            .context("Failed to deserialize challenger")?;
 
         Ok((vk, deferred_inputs, deferred_digest, challenger))
     }

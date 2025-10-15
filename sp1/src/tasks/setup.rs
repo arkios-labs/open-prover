@@ -1,37 +1,24 @@
 use crate::tasks::agent::Sp1Agent;
 use crate::tasks::{SetupInput, SetupOutput};
 use anyhow::{Context, Result};
-use common::serialization::NestedArgBytes;
-use common::serialization::bincode::{Bincode, deserialize_from_bincode_bytes};
-use common::serialization::mpk::Msgpack;
-use sp1_core_machine::io::SP1Stdin;
+use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
 use sp1_stark::{MachineProver, StarkGenericConfig};
-use std::fs;
 use std::time::Instant;
 use tracing::info;
 
 impl Sp1Agent {
-    pub fn setup(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn setup(&self, setup_input: SetupInput) -> Result<SetupOutput> {
         info!("Agent::setup()");
         let start_time = Instant::now();
 
-        let (Msgpack(elf_path), Msgpack(stdin_path)): SetupInput =
-            NestedArgBytes::from_nested_arg_bytes(&input).context("Failed to parse setup input")?;
+        let elf: Vec<u8> = deserialize_from_bincode_bytes(&setup_input.elf)
+            .context("Failed to deserialize ELF")?;
 
-        let elf_bytes = fs::read(&elf_path)
-            .with_context(|| format!("Failed to read ELF file at {}", elf_path))?;
+        let stdin = setup_input.stdin;
 
-        let elf_deserialized: Vec<u8> =
-            deserialize_from_bincode_bytes(&elf_bytes).context("Failed to deserialize ELF")?;
+        let (_, _, _, vkey) = self.prover.setup(&elf);
 
-        let (_, _, _, vkey) = self.prover.setup(&elf_deserialized);
-
-        let stdin_bytes = fs::read(&stdin_path)
-            .with_context(|| format!("Failed to read stdin at {}", stdin_path))?;
-        let stdin_deserialized: SP1Stdin =
-            deserialize_from_bincode_bytes(&stdin_bytes).context("Failed to deserialize stdin")?;
-
-        let deferred_proofs = stdin_deserialized.proofs;
+        let deferred_proofs = stdin.proofs;
         let (deferred_inputs, deferred_digest) = self
             .prove_deferred_leaves(
                 &vkey.vk,
@@ -42,16 +29,25 @@ impl Sp1Agent {
         let mut challenger = self.prover.core_prover.machine().config().challenger();
         vkey.vk.observe_into(&mut challenger);
 
-        let setup_output: SetupOutput = (
-            Bincode(vkey.vk),
-            (Msgpack(deferred_inputs), (Bincode(deferred_digest), Bincode(challenger))),
-        );
+        let vk = serialize_to_bincode_bytes(&vkey.vk).context("Failed to serialize vk")?;
 
-        let serialized = NestedArgBytes::to_nested_arg_bytes(&setup_output)
-            .context("Failed to serialize setup output")?;
+        let challenger =
+            serialize_to_bincode_bytes(&challenger).context("Failed to serialize challenger")?;
+
+        let deferred_inputs = deferred_inputs
+            .into_iter()
+            .map(|input| {
+                serialize_to_bincode_bytes(&input).context("Failed to serialize deferred input")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let deferred_digest = serialize_to_bincode_bytes(&deferred_digest)
+            .context("Failed to serialize deferred digest")?;
+
+        let setup_output = SetupOutput { vk, challenger, deferred_inputs, deferred_digest };
 
         let elapsed = start_time.elapsed();
         info!("Agent::setup() took {:?}", elapsed);
-        Ok(serialized)
+        Ok(setup_output)
     }
 }
