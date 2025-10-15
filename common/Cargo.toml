@@ -17,3 +17,4 @@ tracing = "0.1.41"
 tempfile = "3.20.0"
 serde_bytes = "0.11.17"
 async-trait = "0.1.89"
+tokio = { version = "1.48.0", features = ["fs"] }

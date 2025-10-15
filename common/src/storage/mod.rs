@@ -1,6 +1,8 @@
 use anyhow::Error;
 use async_trait::async_trait;
 
+pub mod fs_storage;
+
 #[async_trait]
 pub trait Storage {
     async fn get(&self, file_path: &str) -> Result<Vec<u8>, Error>;
