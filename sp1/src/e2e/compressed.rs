@@ -122,10 +122,9 @@ mod tests {
     }
 
     #[test]
-    fn test_e2e_binary_tree_variants() -> Result<()> {
+    fn test_compress_explorer_single_record() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        // Case 1: single record (without compress operation)
         let case_single = E2eCase {
             elf_path: "elf/single_record_elf.bin",
             stdin_path: "stdin/single_record_stdin.bin",
@@ -133,7 +132,15 @@ mod tests {
             record_len: 1,
         };
 
-        // Case 2: three records (with compress operation)
+        run_e2e_case(&agent, &metadata_dir, &case_single)
+            .context("Failed to run single record test")?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_compress_fibonacci_three_records() -> Result<()> {
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
+
         let case_multi = E2eCase {
             elf_path: "elf/fibonacci-elf.bin",
             stdin_path: "stdin/fibonacci-elf_shardsize_14_stdin.bin",
@@ -141,7 +148,15 @@ mod tests {
             record_len: 3,
         };
 
-        // Case 3: deferred proofs
+        run_e2e_case(&agent, &metadata_dir, &case_multi)
+            .context("Failed to run multi record test")?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_compress_deferred_proof_records() -> Result<()> {
+        let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
+
         let case_deferred = E2eCase {
             elf_path: "elf/deferred_proof_elf.bin",
             stdin_path: "stdin/deferred_proof_stdin.bin",
@@ -149,10 +164,8 @@ mod tests {
             record_len: 2,
         };
 
-        for case in [&case_single, &case_multi, &case_deferred] {
-            run_e2e_case(&agent, &metadata_dir, case)
-                .with_context(|| format!("case failed: elf_rel={}", case.elf_path))?;
-        }
+        run_e2e_case(&agent, &metadata_dir, &case_deferred)
+            .context("Failed to run deferred proof test")?;
         Ok(())
     }
 
