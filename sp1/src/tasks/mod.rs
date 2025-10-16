@@ -1,3 +1,4 @@
+use crate::tasks::shards::ShardEventData;
 use p3_baby_bear::BabyBear;
 use p3_matrix::dense::DenseMatrix;
 use sp1_core_executor::{ExecutionRecord, SP1ReduceProof};
@@ -11,6 +12,7 @@ pub mod agent;
 mod prove;
 mod recursion;
 mod setup;
+pub mod shards;
 mod shrink_wrap;
 mod snark;
 
@@ -36,11 +38,14 @@ pub struct ProveOutput {
 }
 
 pub struct ProveLiftInput {
-    pub record: ExecutionRecord,
+    pub shard_event_data: ShardEventData,
     pub elf: Vec<u8>,
     pub vk: StarkVerifyingKey<CoreSC>,
     pub deferred_digest: [BabyBear; DIGEST_SIZE],
     pub challenger: Challenger<CoreSC>,
+}
+pub struct ProveLiftDeferredEventsOutput {
+    pub deferred_events: Vec<u8>,
 }
 pub struct ProveLiftReduceProofOutput {
     pub reduce_proof: Vec<u8>,

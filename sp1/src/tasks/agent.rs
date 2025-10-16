@@ -2,7 +2,7 @@ use anyhow::Result;
 use cfg_if::cfg_if;
 use sp1_prover::{DeviceProvingKey, InnerSC, SP1Prover};
 use sp1_recursion_circuit::machine::SP1CompressWithVkeyShape;
-use sp1_stark::{MachineProver, SP1ProverOpts, StarkVerifyingKey};
+use sp1_stark::{MachineProver, SP1ProverOpts, SplitOpts, StarkVerifyingKey};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
@@ -37,11 +37,10 @@ impl Sp1Agent {
             compress_keys.insert(shape.clone(), Arc::new((pk, vk)));
         }
 
-        Ok(Self {
-            prover,
-            prover_opts: SP1ProverOpts::default(),
-            compress_keys: RwLock::new(compress_keys),
-        })
+        let mut prover_opts = SP1ProverOpts::default();
+        prover_opts.core_opts.shard_size = 1 << 14;
+        prover_opts.core_opts.split_opts = SplitOpts::new(1 << 8);
+        Ok(Self { prover, prover_opts, compress_keys: RwLock::new(compress_keys) })
     }
 
     pub fn name(&self) -> &'static str {
