@@ -34,17 +34,10 @@ common = { path = "../common" }
 cfg-if = "1.0.1"
 serde_bytes = "0.11.17"
 bytemuck = { version = "1.13.1", features = ["derive"], optional = true }
+futures = "0.3.31"
 
 [features]
 default = []
 # Enable GPU support by including moongate-core and moongate-prover dependencies
 # https://github.com/succinctlabs/cluster/blob/bf1c2b2/crates/worker/Cargo.toml#L12
 gpu = ["dep:moongate-core", "dep:moongate-prover"]
-
-[[bin]]
-name = "sp1"
-path = "src/bin/sp1.rs"
-
-[[bin]]
-name = "sp1_socket_server"
-path = "src/bin/sp1_socket_server.rs"
