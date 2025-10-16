@@ -1,5 +1,5 @@
 use crate::tasks::agent::Sp1Agent;
-use crate::tasks::{ProveInput, ProveLiftInput, ProveLiftOutput, ProveOutput};
+use crate::tasks::{ProveInput, ProveLiftInput, ProveLiftReduceProofOutput, ProveOutput};
 use anyhow::{Context, Result};
 use common::serialization::bincode::serialize_to_bincode_bytes;
 use p3_field::AbstractField;
@@ -61,7 +61,10 @@ impl Sp1Agent {
         Ok(prove_output)
     }
 
-    pub fn prove_lift(&self, prove_lift_input: ProveLiftInput) -> Result<ProveLiftOutput> {
+    pub fn prove_lift(
+        &self,
+        prove_lift_input: ProveLiftInput,
+    ) -> Result<ProveLiftReduceProofOutput> {
         info!("Agent::prove_lift()");
         let start_time = Instant::now();
 
@@ -137,7 +140,7 @@ impl Sp1Agent {
 
         let reduce_proof =
             serialize_to_bincode_bytes(&reduce_proof).context("Failed to serialize shard_proof")?;
-        let prove_output = ProveLiftOutput { reduce_proof };
+        let prove_output = ProveLiftReduceProofOutput { reduce_proof };
 
         let elapsed = start_time.elapsed();
         info!("Agent::prove_lift() took {:?}", elapsed);

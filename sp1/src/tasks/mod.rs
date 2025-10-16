@@ -42,7 +42,7 @@ pub struct ProveLiftInput {
     pub deferred_digest: [BabyBear; DIGEST_SIZE],
     pub challenger: Challenger<CoreSC>,
 }
-pub struct ProveLiftOutput {
+pub struct ProveLiftReduceProofOutput {
     pub reduce_proof: Vec<u8>,
 }
 
