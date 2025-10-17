@@ -1,8 +1,8 @@
-use crate::storage::Storage;
+use crate::storage::{Storage, StorageError};
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
-use tokio::fs;
+use tokio::{fs, io};
 
 pub struct FileSystemStorage {
     root_path: PathBuf,
@@ -22,28 +22,49 @@ impl FileSystemStorage {
     }
 }
 
+impl StorageError {
+    pub fn from_io_error(path: String, error: io::Error) -> Self {
+        match error.kind() {
+            io::ErrorKind::NotFound => StorageError::NotFound { path },
+            io::ErrorKind::PermissionDenied => StorageError::PermissionDenied { path },
+            _ => StorageError::Unknown(format!("Unknown IO error: {}", error)),
+        }
+    }
+}
+
 #[async_trait]
 impl Storage for FileSystemStorage {
-    async fn get(&self, file_path: &str) -> Result<Vec<u8>, Error> {
+    async fn get(&self, file_path: &str) -> Result<Vec<u8>, StorageError> {
         let path = self.root_path.join(file_path);
-        let data = fs::read(path).await?;
+        let data = fs::read(&path)
+            .await
+            .map_err(|e| StorageError::from_io_error(file_path.to_string(), e))?;
         Ok(data)
     }
 
-    async fn put(&self, file_path: &str, data: &[u8]) -> Result<(), Error> {
+    async fn put(&self, file_path: &str, data: &[u8]) -> Result<(), StorageError> {
         let path = self.root_path.join(file_path);
+
         if let Some(parent) = path.parent()
             && !parent.exists()
         {
-            fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| StorageError::from_io_error(file_path.to_string(), e))?;
         }
-        fs::write(path, data).await?;
+
+        fs::write(&path, data)
+            .await
+            .map_err(|e| StorageError::from_io_error(file_path.to_string(), e))?;
+
         Ok(())
     }
 
-    async fn delete(&self, file_path: &str) -> Result<(), Error> {
+    async fn delete(&self, file_path: &str) -> Result<(), StorageError> {
         let path = self.root_path.join(file_path);
-        fs::remove_file(path).await?;
+        fs::remove_file(&path)
+            .await
+            .map_err(|e| StorageError::from_io_error(file_path.to_string(), e))?;
         Ok(())
     }
 }
@@ -179,6 +200,83 @@ mod tests {
             let mode = permissions.mode();
 
             assert!((mode & 0o600) == 0o600, "File should be readable and writable by owner");
+        }
+
+        temp_dir.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_error_type_not_found() {
+        let (storage, temp_dir) = create_test_storage().await;
+
+        let file_path = "nonexistent_file_for_error_test.txt";
+
+        let get_result = storage.get(file_path).await;
+
+        assert!(get_result.is_err(), "Getting non-existent file should return an error");
+
+        match get_result {
+            Err(StorageError::NotFound { path }) => {
+                assert_eq!(path, file_path, "Error path should match the requested file path");
+            }
+            Err(other_error) => {
+                panic!("Expected NotFound error, but got: {:?}", other_error);
+            }
+            Ok(_) => {
+                panic!("Expected an error but got Ok");
+            }
+        }
+
+        temp_dir.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_error_type_delete_not_found() {
+        let (storage, temp_dir) = create_test_storage().await;
+
+        let file_path = "nonexistent_file_for_delete_test.txt";
+
+        let delete_result = storage.delete(file_path).await;
+
+        assert!(delete_result.is_err(), "Deleting non-existent file should return an error");
+
+        match delete_result {
+            Err(StorageError::NotFound { path }) => {
+                assert_eq!(path, file_path, "Error path should match the requested file path");
+            }
+            Err(other_error) => {
+                panic!("Expected NotFound error, but got: {:?}", other_error);
+            }
+            Ok(_) => {
+                panic!("Expected an error but got Ok");
+            }
+        }
+
+        temp_dir.close().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_error_type_permission_denied() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (storage, temp_dir) = create_test_storage().await;
+
+        let file_path = "readonly.txt";
+        storage.put(file_path, b"test data").await.unwrap();
+
+        let full_path = temp_dir.path().join(file_path);
+        let mut perms = std::fs::metadata(&full_path).unwrap().permissions();
+        perms.set_mode(0o400);
+        std::fs::set_permissions(&full_path, perms).unwrap();
+
+        let result = storage.put(file_path, b"new data").await;
+        assert!(result.is_err());
+
+        if let Err(StorageError::PermissionDenied { path }) = result {
+            assert_eq!(path, file_path);
+        } else {
+            panic!("Expected PermissionDenied error, got: {:?}", result);
         }
 
         temp_dir.close().unwrap();
