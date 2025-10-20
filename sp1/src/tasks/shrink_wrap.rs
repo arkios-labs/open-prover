@@ -1,7 +1,8 @@
 use crate::tasks::agent::Sp1Agent;
 use crate::tasks::{ShrinkWrapInput, ShrinkWrapOutput};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use common::serialization::bincode::serialize_to_bincode_bytes;
+use sp1_prover::HashableKey;
 use std::time::Instant;
 use tracing::info;
 
@@ -14,6 +15,11 @@ impl Sp1Agent {
             .prover
             .shrink(shrink_wrap_input.reduce_proof, self.prover_opts)
             .context("Failed to shrink")?;
+
+        let vkey_hash = shrink_proof.vk.hash_babybear();
+        if !self.prover.recursion_vk_map.contains_key(&vkey_hash) {
+            return Err(anyhow!("shrink vkey {:?} not found in map", vkey_hash));
+        }
 
         let wrap_proof =
             self.prover.wrap_bn254(shrink_proof, self.prover_opts).context("Failed to wrap")?;
