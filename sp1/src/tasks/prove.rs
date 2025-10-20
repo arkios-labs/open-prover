@@ -4,21 +4,32 @@ use crate::tasks::{
     ProveInput, ProveLiftDeferredEventsOutput, ProveLiftInput, ProveLiftReduceProofOutput,
     ProveOutput,
 };
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use common::serialization::bincode::serialize_to_bincode_bytes;
-use sp1_core_executor::RiscvAirId;
+use p3_baby_bear::BabyBear;
+use p3_challenger::CanObserve;
+use sp1_core_executor::{RiscvAirId, SP1ReduceProof};
 use sp1_core_machine::shape::Shapeable;
-use sp1_prover::SP1CircuitWitness;
 use sp1_prover::shapes::SP1CompressProgramShape;
+use sp1_prover::{CoreSC, HashableKey, SP1CircuitWitness};
 use sp1_recursion_circuit::machine::{SP1RecursionShape, SP1RecursionWitnessValues};
-use sp1_stark::MachineProver;
+use sp1_recursion_core::air::RecursionPublicValues;
 use sp1_stark::air::MachineAir;
+use sp1_stark::baby_bear_poseidon2::Val;
+use sp1_stark::septic_digest::SepticDigest;
 use sp1_stark::shape::OrderedShape;
+use sp1_stark::{
+    Challenger, MachineProof, MachineProver, ShardProof, StarkGenericConfig, StarkVerifyingKey,
+    Verifier,
+};
+use std::borrow::Borrow;
+use std::iter::once;
 use std::slice::from_mut;
 use std::str::FromStr;
 use std::time::Instant;
 use tokio::sync::oneshot;
-use tracing::info;
+use tokio::task::JoinHandle;
+use tracing::{debug, error, info};
 
 impl Sp1Agent {
     pub fn prove(&self, prove_input: ProveInput) -> Result<ProveOutput> {
@@ -74,7 +85,7 @@ impl Sp1Agent {
         let start_time = Instant::now();
 
         let vk = prove_lift_input.vk;
-        let mut challenger = prove_lift_input.challenger.clone();
+        let challenger = prove_lift_input.challenger.clone();
 
         let program = self
             .prover
@@ -100,26 +111,22 @@ impl Sp1Agent {
 
         let traces = self.prover.core_prover.generate_traces(&shard);
 
-        let split_opts = self.prover_opts.core_opts.split_opts.clone();
-        let deferred_promise: tokio::task::JoinHandle<Result<(), anyhow::Error>> =
-            tokio::spawn(async move {
-                let deferred_data =
-                    deferred.context("Expected deferred data for non-precompile")?;
+        let split_opts = self.prover_opts.core_opts.split_opts;
 
-                let events = DeferredEvents::defer_record(deferred_data, split_opts).await?;
-                info!("deferred_events: {:?}", events);
+        let deferred_promise: JoinHandle<Result<(), anyhow::Error>> = tokio::spawn(async move {
+            let deferred_data = deferred.context("Expected deferred data for non-precompile")?;
 
-                let events_bytes = serialize_to_bincode_bytes(&events)
-                    .context("Failed to serialize deferred_result")?;
+            let events = DeferredEvents::defer_record(deferred_data, split_opts).await?;
+            info!("deferred_events: {:?}", events);
 
-                let deferred_output =
-                    ProveLiftDeferredEventsOutput { deferred_events: events_bytes };
+            let events_bytes = serialize_to_bincode_bytes(&events)
+                .context("Failed to serialize deferred_result")?;
 
-                tx.send(deferred_output)
-                    .map_err(|_| anyhow!("Failed to send deferred response"))?;
+            let deferred_output = ProveLiftDeferredEventsOutput { deferred_events: events_bytes };
 
-                Ok(())
-            });
+            tx.send(deferred_output).map_err(|_| anyhow!("Failed to send deferred response"))?;
+            Ok(())
+        });
 
         let pk = tracing::info_span!("pk_from_vk")
             .in_scope(|| self.prover.core_prover.pk_from_vk(&program, &vk));
@@ -127,8 +134,19 @@ impl Sp1Agent {
         let data = tracing::info_span!("commit_main")
             .in_scope(|| self.prover.core_prover.commit(&shard, traces));
 
+        let mut challenger_clone = challenger.clone();
+
         let shard_proof = tracing::info_span!("prove_shard")
-            .in_scope(|| self.prover.core_prover.open(&pk, data, &mut challenger).unwrap());
+            .in_scope(|| self.prover.core_prover.open(&pk, data, &mut challenger_clone).unwrap());
+
+        let shard_number = shard.public_values.shard;
+
+        let verify_future = self.spawn_verify_core_shard(
+            vk.clone(),
+            shard_proof.clone(),
+            challenger.clone(),
+            shard_number,
+        );
 
         let is_first_shard = shard.public_values.shard == 1;
 
@@ -168,6 +186,25 @@ impl Sp1Agent {
             .full_recursion(program, witness, self.prover_opts, None)
             .context("Failed to reduce proof")?;
 
+        let reduce_verify_future = self.spawn_verify_reduce_leaf(reduce_proof.clone());
+
+        let expected_global_cumulative_sum = verify_future
+            .await
+            .unwrap()
+            .map_err(|e| anyhow!("failed to verify shard proof: {}", e))?;
+
+        let final_sum = reduce_verify_future
+            .await
+            .unwrap()
+            .map_err(|e| anyhow!("failed to verify reduce proof: {}", e))?;
+        if expected_global_cumulative_sum != final_sum {
+            return Err(anyhow!(
+                "expected global cumulative sum {:?} != final sum {:?}",
+                expected_global_cumulative_sum,
+                final_sum
+            ));
+        }
+
         let serialized = serialize_to_bincode_bytes(&reduce_proof)
             .context("Failed to serialize reduce_proof")?;
 
@@ -189,7 +226,7 @@ impl Sp1Agent {
         let start_time = Instant::now();
 
         let vk = prove_lift_input.vk;
-        let mut challenger = prove_lift_input.challenger.clone();
+        let challenger = prove_lift_input.challenger.clone();
 
         let program = self
             .prover
@@ -221,8 +258,19 @@ impl Sp1Agent {
         let data = tracing::info_span!("commit_main")
             .in_scope(|| self.prover.core_prover.commit(&shard, traces));
 
+        let mut challenger_clone = challenger.clone();
+
         let shard_proof = tracing::info_span!("prove_shard")
-            .in_scope(|| self.prover.core_prover.open(&pk, data, &mut challenger).unwrap());
+            .in_scope(|| self.prover.core_prover.open(&pk, data, &mut challenger_clone).unwrap());
+
+        let shard_number = shard.public_values.shard;
+
+        let verify_future = self.spawn_verify_core_shard(
+            vk.clone(),
+            shard_proof.clone(),
+            challenger.clone(),
+            shard_number,
+        );
 
         let is_first_shard = shard.public_values.shard == 1;
 
@@ -262,6 +310,25 @@ impl Sp1Agent {
             .full_recursion(program, witness, self.prover_opts, None)
             .context("Failed to reduce proof")?;
 
+        let reduce_verify_future = self.spawn_verify_reduce_leaf(reduce_proof.clone());
+
+        let expected_global_cumulative_sum = verify_future
+            .await
+            .unwrap()
+            .map_err(|e| anyhow!("failed to verify shard proof: {}", e))?;
+
+        let final_sum = reduce_verify_future
+            .await
+            .unwrap()
+            .map_err(|e| anyhow!("failed to verify reduce proof: {}", e))?;
+        if expected_global_cumulative_sum != final_sum {
+            return Err(anyhow!(
+                "expected global cumulative sum {:?} != final sum {:?}",
+                expected_global_cumulative_sum,
+                final_sum
+            ));
+        }
+
         let serialized = serialize_to_bincode_bytes(&reduce_proof)
             .context("Failed to serialize reduce_proof")?;
 
@@ -271,5 +338,86 @@ impl Sp1Agent {
         info!("Agent::prove_lift_precompile() took {:?}", elapsed);
 
         Ok(prove_lift_output)
+    }
+
+    pub fn spawn_verify_core_shard(
+        &self,
+        vk: StarkVerifyingKey<CoreSC>,
+        shard_proof: ShardProof<CoreSC>,
+        mut challenger: Challenger<CoreSC>,
+        shard_number: u32,
+    ) -> JoinHandle<Result<SepticDigest<Val>>> {
+        let prover_clone = self.prover.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let machine = prover_clone.core_prover.machine();
+            let chips = machine.shard_chips_ordered(&shard_proof.chip_ordering).collect::<Vec<_>>();
+            challenger.observe_slice(
+                &shard_proof.public_values[0..prover_clone.core_prover.num_pv_elts()],
+            );
+
+            let result = Verifier::verify_shard(
+                machine.config(),
+                &vk,
+                &chips,
+                &mut challenger,
+                &shard_proof,
+            );
+
+            match &result {
+                Ok(_) => {
+                    debug!("Core shard proof verification succeeded");
+                }
+                Err(e) => {
+                    error!("Core shard proof verification failed: {:?}", e);
+                }
+            }
+
+            let mut expected = shard_proof.global_cumulative_sum();
+            if shard_number == 1 {
+                expected = once(expected).chain(once(vk.initial_global_cumulative_sum)).sum();
+            }
+            info!("Expected cumulative sum from core: {:?}", expected);
+
+            result.map(|_| expected).map_err(|e| anyhow!(e))
+        })
+    }
+    pub fn spawn_verify_reduce_leaf(
+        &self,
+        proof: SP1ReduceProof<CoreSC>,
+    ) -> JoinHandle<Result<SepticDigest<BabyBear>>> {
+        let prover_clone = self.prover.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let compress_prover = &prover_clone.compress_prover;
+            let machine = compress_prover.machine();
+            let config = compress_prover.config();
+
+            let SP1ReduceProof { vk, proof: shard_proof } = proof;
+            let mut challenger = config.challenger();
+
+            let machine_proof = MachineProof { shard_proofs: vec![shard_proof.clone()] };
+
+            let pv: &RecursionPublicValues<BabyBear> =
+                shard_proof.public_values.as_slice().borrow();
+
+            let result = machine.verify(&vk, &machine_proof, &mut challenger);
+
+            match &result {
+                Ok(()) => {
+                    debug!("Reduce leaf proof verification succeeded");
+                    let vkey_hash = vk.hash_babybear();
+                    if !prover_clone.recursion_vk_map.contains_key(&vkey_hash) {
+                        error!("vkey {:?} not found in map", vkey_hash);
+                        bail!("Invalid verification key");
+                    }
+                }
+                Err(e) => {
+                    error!("Reduce leaf proof verification failed: {:?}", e);
+                }
+            }
+
+            result.map(|_| pv.global_cumulative_sum).map_err(|e| anyhow!(e))
+        })
     }
 }

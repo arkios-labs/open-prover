@@ -24,6 +24,7 @@ p3-field = { version = "=0.2.3-succinct" }
 p3-matrix = { version = "=0.2.3-succinct" }
 p3-merkle-tree = { version = "=0.2.3-succinct" }
 p3-baby-bear = { version = "=0.2.3-succinct" }
+p3-challenger = { version = "=0.2.3-succinct" }
 
 # etc
 tracing = "0.1.41"

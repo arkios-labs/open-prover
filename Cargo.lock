@@ -6752,6 +6752,7 @@ dependencies = [
  "moongate-core",
  "moongate-prover",
  "p3-baby-bear",
+ "p3-challenger",
  "p3-field",
  "p3-matrix",
  "p3-merkle-tree",
