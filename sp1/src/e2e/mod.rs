@@ -1,5 +1,4 @@
 mod compressed;
-mod core;
 mod groth16;
 mod plonk;
 mod wrap;
