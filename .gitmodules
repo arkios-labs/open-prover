@@ -1,0 +1,4 @@
+[submodule "idl"]
+	path = idl
+	url = https://github.com/zk-rabbit/idl.git
+	branch = main
