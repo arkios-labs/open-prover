@@ -1,5 +1,11 @@
 mod execute;
-pub mod r0;
+mod finalize;
+mod join;
+mod keccak;
+mod prove;
+mod resolve;
+mod stark2snark;
+mod union;
 
 use anyhow::{Context, Result};
 use risc0_zkvm::{
