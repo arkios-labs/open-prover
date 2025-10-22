@@ -1,34 +1,17 @@
-use crate::tasks::{Agent, ProveKeccakRequestLocal, convert, deserialize_obj, serialize_obj};
+use crate::tasks::{ProveKeccakRequestLocal, Risc0Agent, convert, deserialize_obj, serialize_obj};
 use anyhow::{Context, Result, bail};
 use hex::FromHex;
 use risc0_zkvm::sha::Digestible;
 use risc0_zkvm::{
-    Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts, ProverServer, Receipt,
-    ReceiptClaim, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
+    Assumption, AssumptionReceipt, Digest, InnerReceipt, ProverOpts, Receipt, ReceiptClaim,
+    SuccinctReceipt, Unknown,
 };
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::time::Instant;
 use tracing::info;
 
-pub struct RiscZeroAgent {
-    pub prover: Rc<dyn ProverServer>,
-    pub verifier_ctx: VerifierContext,
-}
-
-impl RiscZeroAgent {
-    pub fn new() -> Result<Self> {
-        let verifier_ctx = VerifierContext::default();
-
-        let opts = ProverOpts::default().with_segment_po2_max(25);
-        let prover = get_prover_server(&opts).context("Failed to initialize prover server")?;
-
-        Ok(Self { prover, verifier_ctx })
-    }
-}
-
-impl Agent for RiscZeroAgent {
-    fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+impl Risc0Agent {
+    pub fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::prove()");
         let start_time = Instant::now();
 
@@ -52,7 +35,7 @@ impl Agent for RiscZeroAgent {
         Ok(serialized)
     }
 
-    fn join(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn join(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::join()");
         let start_time = Instant::now();
 
@@ -80,7 +63,7 @@ impl Agent for RiscZeroAgent {
         Ok(serialized)
     }
 
-    fn keccak(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn keccak(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::keccak()");
         let start_time = Instant::now();
 
@@ -102,7 +85,7 @@ impl Agent for RiscZeroAgent {
         Ok(serialized)
     }
 
-    fn union(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn union(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::union()");
         let start_time = Instant::now();
 
@@ -134,7 +117,7 @@ impl Agent for RiscZeroAgent {
         Ok(serialized)
     }
 
-    fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::resolve()");
         let start_time = Instant::now();
 
@@ -219,7 +202,7 @@ impl Agent for RiscZeroAgent {
         Ok(serialized)
     }
 
-    fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::finalize()");
         let start_time = Instant::now();
 
@@ -251,7 +234,7 @@ impl Agent for RiscZeroAgent {
         Ok(serialized)
     }
 
-    fn stark2snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn stark2snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
         info!("Agent::stark2snark()");
         let start_time = Instant::now();
 
@@ -280,7 +263,7 @@ impl Agent for RiscZeroAgent {
 #[cfg(test)]
 mod tests {
     use crate::tasks::{
-        Agent, ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
+        ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
         setup_agent_and_metadata_dir,
     };
     use anyhow::Context;
@@ -288,7 +271,7 @@ mod tests {
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
-    use risc0_zkvm::{Receipt, ReceiptClaim, SuccinctReceipt, Unknown};
+    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt, Unknown};
     use std::{collections::VecDeque, fs};
     use tracing::info;
 

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use risc0::command::registry::Command;
-use risc0::tasks::r0::RiscZeroAgent;
+use risc0::tasks::Risc0Agent;
 use std::io::{Read, Write};
 use std::{env, io};
 use tracing::info;
@@ -13,7 +13,7 @@ async fn main() -> Result<()> {
 
     info!("Running with TASK_TYPE={:?}", task_type);
 
-    let agent = RiscZeroAgent::new().context("Failed to create agent")?;
+    let agent = Risc0Agent::new().context("Failed to create agent")?;
 
     let mut stdin = io::stdin();
     let mut input_bytes = Vec::new();

@@ -1,4 +1,4 @@
-use crate::tasks::Agent;
+use crate::tasks::Risc0Agent;
 use anyhow::{Result, anyhow};
 use std::str::FromStr;
 
@@ -30,7 +30,7 @@ impl FromStr for Command {
     }
 }
 impl Command {
-    pub fn apply(self, agent: &impl Agent, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn apply(self, agent: &Risc0Agent, input: Vec<u8>) -> Result<Vec<u8>> {
         match self {
             Command::Join => agent.join(input),
             Command::Prove => agent.prove(input),

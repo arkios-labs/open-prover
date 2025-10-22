@@ -1,14 +1,14 @@
 pub mod r0;
 
-use crate::tasks::r0::RiscZeroAgent;
 use anyhow::{Context, Result};
 use risc0_zkvm::{
-    Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, ReceiptClaim, Segment,
-    SuccinctReceipt, Unknown,
+    Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, ProverOpts, ProverServer,
+    ReceiptClaim, Segment, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 pub type KeccakState = [u64; 25];
 
@@ -64,14 +64,20 @@ pub struct FinalizeInput {
     pub(crate) image_id: String,
 }
 
-pub trait Agent {
-    fn prove(&self, data: Vec<u8>) -> Result<Vec<u8>>;
-    fn join(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    fn keccak(&self, prove_keccak_request: Vec<u8>) -> Result<Vec<u8>>;
-    fn union(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>>;
-    fn stark2snark(&self, input: Vec<u8>) -> Result<Vec<u8>>;
+pub struct Risc0Agent {
+    pub prover: Rc<dyn ProverServer>,
+    pub verifier_ctx: VerifierContext,
+}
+
+impl Risc0Agent {
+    pub fn new() -> Result<Self> {
+        let verifier_ctx = VerifierContext::default();
+
+        let opts = ProverOpts::default().with_segment_po2_max(25);
+        let prover = get_prover_server(&opts).context("Failed to initialize prover server")?;
+
+        Ok(Self { prover, verifier_ctx })
+    }
 }
 
 pub fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
@@ -94,12 +100,12 @@ fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
     }
 }
 
-pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, RiscZeroAgent)> {
+pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, Risc0Agent)> {
     let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
 
     let metadata_dir = PathBuf::from("metadata");
 
-    let agent = RiscZeroAgent::new().context("Failed to create agent")?;
+    let agent = Risc0Agent::new().context("Failed to create agent")?;
 
     Ok((metadata_dir, agent))
 }
