@@ -1,4 +1,4 @@
-mod execute;
+pub mod execute;
 mod finalize;
 mod join;
 mod keccak;
@@ -14,6 +14,7 @@ use risc0_zkvm::{
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -115,4 +116,25 @@ pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, Risc0Agent)> {
     let agent = Risc0Agent::new().context("Failed to create agent")?;
 
     Ok((metadata_dir, agent))
+}
+
+pub fn compress_binary_tree<F>(func: F, receipts: VecDeque<Vec<u8>>) -> Result<Vec<u8>>
+where
+    F: Fn(Vec<u8>, Vec<u8>) -> Result<Vec<u8>>,
+{
+    let mut queue = receipts;
+    while queue.len() > 1 {
+        let mut next_level = VecDeque::with_capacity((queue.len() + 1) / 2);
+        while let Some(left) = queue.pop_front() {
+            if let Some(right) = queue.pop_front() {
+                let joined = func(left, right).context("Failed to join receipts")?;
+                next_level.push_back(joined);
+            } else {
+                next_level.push_back(left);
+                break;
+            }
+        }
+        queue = next_level;
+    }
+    Ok(queue.pop_front().unwrap())
 }

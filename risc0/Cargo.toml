@@ -21,3 +21,8 @@ risc0-zkvm-methods = { git = "https://github.com/risc0/risc0.git", tag = "v3.0.3
 [features]
 default = []
 cuda = ["risc0-zkvm/cuda"]
+
+[[test]]
+name = "generate_fixtures"
+path = "tests/generate_fixtures.rs"
+harness = false
