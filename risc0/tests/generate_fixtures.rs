@@ -12,27 +12,24 @@ use risc0::tasks::{
     Risc0Agent, compress_binary_tree, deserialize_obj,
     execute::{ExecuteMessage, ExecuteResult},
     serialize_obj,
+    test_constants::{
+        ASSUMPTIONS_PATH, FINAL_RECEIPT_PATH, JOIN_ROOT_RECEIPT_PATH, JOURNAL_PATH,
+        KECCAK_RECEIPTS_PATH, KECCAKS_PATH, METADATA_PATH, RESOLVED_RECEIPT_PATH,
+        SEGMENT_LIFTED_RECEIPTS_PATH, SEGMENTS_PATH, UNION_ROOT_RECEIPT_PATH,
+    },
 };
 
 const SEGMENT_LIMIT_PO2: u32 = 18;
 const KECCAK_LIMIT_PO2: u32 = 16;
 
-const OUTPUT_DIR: &str = "metadata";
-const SEGMENTS_PATH: &str = "session/segments.bin";
-const KECCAKS_PATH: &str = "session/keccaks.bin";
-const JOURNAL_PATH: &str = "session/journal.bin";
-const ASSUMPTIONS_PATH: &str = "session/assumptions.bin";
-const SEGMENT_LIFTED_RECEIPTS_PATH: &str = "receipt/segment_lifted_receipts.bin";
-const KECCAK_RECEIPTS_PATH: &str = "receipt/keccak_receipts.bin";
-const JOIN_ROOT_RECEIPT_PATH: &str = "receipt/join_root_receipt.bin";
-const UNION_ROOT_RECEIPT_PATH: &str = "receipt/union_root_receipt.bin";
-const RESOLVED_RECEIPT_PATH: &str = "receipt/resolved_receipt.bin";
-const FINAL_RECEIPT_PATH: &str = "receipt/final_receipt.bin";
-
 fn main() {
+    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init().unwrap();
+
     let elf_data = MULTI_TEST_ELF.to_vec();
     let image_id = compute_image_id(&elf_data).context("Failed to compute image id").unwrap();
     let input_data: Vec<u32> = to_vec(&MultiTestSpec::KeccakUnion(1)).unwrap();
+
+    tracing::info!("Generating fixtures for image id: {}", image_id.to_string());
 
     let (metadata_dir, _agent) = generate_fixtures(elf_data, image_id, input_data)
         .context("Failed to generate fixtures")
@@ -84,7 +81,7 @@ pub fn generate_fixtures(
 
     let result = result.unwrap();
 
-    let metadata_dir = PathBuf::from(OUTPUT_DIR);
+    let metadata_dir = PathBuf::from(METADATA_PATH);
     fs::create_dir_all(&metadata_dir).context("Failed to create metadata directory")?;
     fs::write(&metadata_dir.join(SEGMENTS_PATH), &serialize_to_bincode_bytes(&segments)?)?;
     fs::write(&metadata_dir.join(KECCAKS_PATH), &serialize_to_bincode_bytes(&keccaks)?)?;

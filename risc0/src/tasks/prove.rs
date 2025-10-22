@@ -33,15 +33,14 @@ impl Risc0Agent {
 
 #[cfg(test)]
 mod tests {
-    use crate::tasks::{
-        SerializableSession, deserialize_obj, serialize_obj, setup_agent_and_metadata_dir,
-    };
+    use crate::tasks::test_constants;
+    use crate::tasks::{deserialize_obj, serialize_obj, setup_agent_and_metadata_dir};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
-    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt};
+    use risc0_zkvm::{ReceiptClaim, Segment, SuccinctReceipt};
     use std::fs;
     use tracing::info;
 
@@ -49,19 +48,18 @@ mod tests {
     fn test_prove_all_segments() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
-        info!("Loading session from: {session_path:?}");
-
-        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
-        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
-            .context("Failed to deserialize session")?;
-        let segment_count = session.segments.len();
-        assert!(segment_count > 0, "No segments found in session");
+        let segments_path = metadata_dir.join(test_constants::SEGMENTS_PATH);
+        info!("Loading segments from: {segments_path:?}");
+        let segments = fs::read(&segments_path).context("Failed to read segments file")?;
+        let segments: Vec<Segment> =
+            deserialize_from_bincode_bytes(&segments).context("Failed to deserialize segments")?;
+        let segment_count = segments.len();
+        assert!(segment_count > 0, "No segments found");
 
         info!("Found {segment_count} segments. Starting proof generation...",);
         let mut all_receipts = Vec::with_capacity(segment_count);
 
-        for (i, segment) in session.segments.iter().enumerate() {
+        for (i, segment) in segments.iter().enumerate() {
             let current_index = i + 1;
             info!("Proving segment [{current_index}/{segment_count}]");
             let bytes = serialize_obj(segment)?;

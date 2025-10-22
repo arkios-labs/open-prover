@@ -35,23 +35,19 @@ impl Risc0Agent {
 #[cfg(test)]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod tests {
-    use crate::tasks::{
-        ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
-        setup_agent_and_metadata_dir,
-    };
+    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir, test_constants};
     use anyhow::Context;
-    use anyhow::{Result, anyhow};
+    use anyhow::Result;
     use common::serialization::bincode::deserialize_from_bincode_bytes;
-    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt, Unknown};
-    use std::{collections::VecDeque, fs};
+    use risc0_zkvm::{Receipt, Unknown};
+    use std::fs;
     use tracing::info;
 
     #[test]
     fn test_stark2snark() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let stark_path =
-            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_stark_receipt.bin");
+        let stark_path = metadata_dir.join(test_constants::FINAL_RECEIPT_PATH);
         info!("Loading stark receipt from: {stark_path:?}");
 
         let stark_receipt_serialized = fs::read(&stark_path).context("Failed to read file")?;

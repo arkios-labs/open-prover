@@ -41,11 +41,11 @@ impl Risc0Agent {
 
 #[cfg(test)]
 mod tests {
-    use crate::tasks::{SerializableSession, serialize_obj, setup_agent_and_metadata_dir};
+    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir, test_constants};
     use anyhow::Context;
-    use anyhow::{Result, anyhow};
+    use anyhow::Result;
     use common::serialization::bincode::deserialize_from_bincode_bytes;
-    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt};
+    use risc0_zkvm::{Journal, ReceiptClaim, SuccinctReceipt};
     use std::fs;
     use tracing::info;
 
@@ -53,29 +53,20 @@ mod tests {
     fn test_finalize_on_session() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let resolved_receipt_path = metadata_dir
-            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_resolved_receipt.bin");
+        let resolved_receipt_path = metadata_dir.join(test_constants::RESOLVED_RECEIPT_PATH);
         info!("Loading resolved receipt from: {:?}", resolved_receipt_path);
         let resolved_receipt = fs::read(&resolved_receipt_path).context("Failed to read file")?;
         let resolved_receipt: SuccinctReceipt<ReceiptClaim> =
             deserialize_from_bincode_bytes(&resolved_receipt).context("Failed to deserialize")?;
         assert!(resolved_receipt.claim.as_value().is_ok(), "Root receipt should have a claim");
 
-        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
-        info!("Loading session from: {:?}", session_path);
-        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
-        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
-            .context("Failed to deserialize session")?;
+        let journal_path = metadata_dir.join(test_constants::JOURNAL_PATH);
+        info!("Loading journal from: {:?}", journal_path);
+        let journal = fs::read(&journal_path).context("Failed to read journal file")?;
+        let journal: Journal =
+            deserialize_from_bincode_bytes(&journal).context("Failed to deserialize journal")?;
 
-        let journal_bytes = session
-            .journal
-            .as_ref()
-            .map(|j| j.bytes.clone())
-            .ok_or_else(|| anyhow!("journal is missing"))?;
-
-        info!("Journal loaded, size: {}", journal_bytes.len());
-
-        let image_id = "3fe354c3604a1b33f44a76bde3ee677e0f68a1777b0f74f7658c87b49e4c4c8a";
+        let image_id = test_constants::FIXTURES_IMAGE_ID.to_string();
 
         let resolved_receipt_serialized =
             serialize_obj(&resolved_receipt).context("Failed to serialize")?;
@@ -83,7 +74,7 @@ mod tests {
 
         let finalize_input = serde_json::to_vec(&vec![
             resolved_receipt_serialized,
-            journal_bytes,
+            journal.bytes,
             image_id_serialized,
         ])
         .context("Failed to serialize finalize input")?;

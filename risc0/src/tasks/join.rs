@@ -37,16 +37,11 @@ impl Risc0Agent {
 
 #[cfg(test)]
 mod tests {
-    use crate::tasks::{
-        ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
-        setup_agent_and_metadata_dir,
-    };
+    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir, test_constants};
     use anyhow::Context;
-    use anyhow::{Result, anyhow};
-    use common::serialization::bincode::{
-        deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
-    };
-    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt, Unknown};
+    use anyhow::Result;
+    use common::serialization::bincode::deserialize_from_bincode_bytes;
+    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt};
     use std::{collections::VecDeque, fs};
     use tracing::info;
 
@@ -54,8 +49,7 @@ mod tests {
     fn test_join_on_lifted_receipts() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let proof_path =
-            metadata_dir.join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_lifted_receipt.bin");
+        let proof_path = metadata_dir.join(test_constants::SEGMENT_LIFTED_RECEIPTS_PATH);
         info!("Loading lifted proof from: {proof_path:?}");
         let lifted_receipts = fs::read(&proof_path).context("Failed to read receipt file")?;
 

@@ -111,7 +111,7 @@ fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
 pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, Risc0Agent)> {
     let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
 
-    let metadata_dir = PathBuf::from("metadata");
+    let metadata_dir = PathBuf::from(test_constants::METADATA_PATH);
 
     let agent = Risc0Agent::new().context("Failed to create agent")?;
 
@@ -137,4 +137,20 @@ where
         queue = next_level;
     }
     Ok(queue.pop_front().unwrap())
+}
+
+pub mod test_constants {
+    pub const FIXTURES_IMAGE_ID: &str =
+        "8edff446235f5e628e89a627661ec2d1c13c4467beb0a7c669709ea36b5c9a1a"; // MultiTestSpec::KeccakUnion(1)
+    pub const METADATA_PATH: &str = "metadata";
+    pub const SEGMENTS_PATH: &str = "session/segments.bin";
+    pub const KECCAKS_PATH: &str = "session/keccaks.bin";
+    pub const JOURNAL_PATH: &str = "session/journal.bin";
+    pub const ASSUMPTIONS_PATH: &str = "session/assumptions.bin";
+    pub const SEGMENT_LIFTED_RECEIPTS_PATH: &str = "receipt/segment_lifted_receipts.bin";
+    pub const KECCAK_RECEIPTS_PATH: &str = "receipt/keccak_receipts.bin";
+    pub const JOIN_ROOT_RECEIPT_PATH: &str = "receipt/join_root_receipt.bin";
+    pub const UNION_ROOT_RECEIPT_PATH: &str = "receipt/union_root_receipt.bin";
+    pub const RESOLVED_RECEIPT_PATH: &str = "receipt/resolved_receipt.bin";
+    pub const FINAL_RECEIPT_PATH: &str = "receipt/final_receipt.bin";
 }

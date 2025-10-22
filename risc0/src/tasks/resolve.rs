@@ -97,11 +97,12 @@ impl Risc0Agent {
 
 #[cfg(test)]
 mod tests {
-    use crate::tasks::{SerializableSession, serialize_obj, setup_agent_and_metadata_dir};
+    use crate::tasks::test_constants;
+    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::deserialize_from_bincode_bytes;
-    use risc0_zkvm::{ReceiptClaim, SuccinctReceipt, Unknown};
+    use risc0_zkvm::{Assumption, AssumptionReceipt, ReceiptClaim, SuccinctReceipt, Unknown};
     use std::fs;
     use tracing::info;
 
@@ -109,22 +110,21 @@ mod tests {
     fn test_resolve_on_session() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
-        info!("Loading session from: {:?}", session_path);
-        let session_serialized = fs::read(&session_path).context("Failed to read session file")?;
-        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)
-            .context("Failed to deserialize session")?;
+        let assumptions_path = metadata_dir.join(test_constants::ASSUMPTIONS_PATH);
+        info!("Loading assumptions from: {:?}", assumptions_path);
+        let assumptions = fs::read(&assumptions_path).context("Failed to read assumptions file")?;
+        let assumptions: Vec<(Assumption, AssumptionReceipt)> =
+            deserialize_from_bincode_bytes(&assumptions)
+                .context("Failed to deserialize assumptions")?;
 
-        let join_root_path = metadata_dir
-            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_join_root_receipt.bin");
+        let join_root_path = metadata_dir.join(test_constants::JOIN_ROOT_RECEIPT_PATH);
         info!("Loading root receipt from: {:?}", join_root_path);
         let join_root_serialized = fs::read(&join_root_path).context("Failed to read file")?;
         let join_root_receipt: SuccinctReceipt<ReceiptClaim> =
             deserialize_from_bincode_bytes(&join_root_serialized)
                 .context("Failed to deserialize")?;
 
-        let union_root_path = metadata_dir
-            .join("receipt/po2_19_segment_3_keccak_2_cycle_1420941_union_root_receipt.bin");
+        let union_root_path = metadata_dir.join(test_constants::UNION_ROOT_RECEIPT_PATH);
         info!("Loading unioned receipt from: {:?}", union_root_path);
         let union_root_serialized = fs::read(&union_root_path).context("Failed to read file")?;
         let union_root_receipt: SuccinctReceipt<Unknown> =
@@ -133,7 +133,7 @@ mod tests {
 
         let join_root_serialized = serialize_obj(&join_root_receipt)?;
         let union_root_serialized = serialize_obj(&union_root_receipt)?;
-        let assumptions_serialized = serialize_obj(&session.assumptions)?;
+        let assumptions_serialized = serialize_obj(&assumptions)?;
 
         let resolve_input = serde_json::to_vec(&vec![
             join_root_serialized,

@@ -31,16 +31,16 @@ impl Risc0Agent {
 
 #[cfg(test)]
 mod tests {
+    use crate::tasks::test_constants;
     use crate::tasks::{
-        ProveKeccakRequestLocal, SerializableSession, deserialize_obj, serialize_obj,
-        setup_agent_and_metadata_dir,
+        ProveKeccakRequestLocal, deserialize_obj, serialize_obj, setup_agent_and_metadata_dir,
     };
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
-    use risc0_zkvm::{SuccinctReceipt, Unknown};
+    use risc0_zkvm::{ProveKeccakRequest, SuccinctReceipt, Unknown};
     use std::fs;
     use tracing::info;
 
@@ -48,20 +48,20 @@ mod tests {
     fn test_keccak_on_pending_keccaks() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let session_path = metadata_dir.join("session/po2_19_segment_3_keccak_2_cycle_1420941.bin");
-        info!("Loading session from: {session_path:?}");
+        let keccaks_path = metadata_dir.join(test_constants::KECCAKS_PATH);
+        info!("Loading keccaks from: {keccaks_path:?}");
 
-        let session_serialized = fs::read(&session_path)?;
-        let session: SerializableSession = deserialize_from_bincode_bytes(&session_serialized)?;
+        let keccaks_serialized = fs::read(&keccaks_path)?;
+        let keccaks: Vec<ProveKeccakRequest> = deserialize_from_bincode_bytes(&keccaks_serialized)?;
 
-        let keccak_count = session.pending_keccaks.len();
+        let keccak_count = keccaks.len();
         assert!(keccak_count > 0, "No pending keccaks found in session");
 
         info!("Found {keccak_count} pending keccak inputs");
 
         let mut all_receipts = Vec::with_capacity(keccak_count);
 
-        for (i, keccak_req) in session.pending_keccaks.iter().enumerate() {
+        for (i, keccak_req) in keccaks.iter().enumerate() {
             let current_index = i + 1;
             let local_req = ProveKeccakRequestLocal {
                 claim_digest: keccak_req
