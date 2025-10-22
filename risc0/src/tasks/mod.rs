@@ -1,3 +1,4 @@
+mod execute;
 pub mod r0;
 
 use anyhow::{Context, Result};
