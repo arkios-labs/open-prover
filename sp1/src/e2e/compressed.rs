@@ -135,7 +135,7 @@ mod tests {
 
         // Case 2: three records (with compress operation)
         let case_multi = E2eCase {
-            elf_path: "elf/fibonacci-elf",
+            elf_path: "elf/fibonacci-elf.bin",
             stdin_path: "stdin/fibonacci-elf_shardsize_14_stdin.bin",
             record_glob_fmt: "record/fibonacci-elf_shardsize_14_record_{}.bin",
             record_len: 3,
@@ -165,7 +165,7 @@ mod tests {
         let pv: SP1PublicValues =
             deserialize_from_bincode_bytes(&pv).context("Failed to deserialize public_values")?;
 
-        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path = metadata_dir.join("elf/fibonacci-elf.bin");
 
         let stdin_path = metadata_dir.join("stdin/keccak-elf_shardsize_14_stdin.bin");
 

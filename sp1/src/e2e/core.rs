@@ -28,7 +28,7 @@ mod tests {
         let prover = &agent.prover;
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
-        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path = metadata_dir.join("elf/fibonacci-elf.bin");
         let (elf, vk, _, _, challenger) =
             setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
 
@@ -82,7 +82,7 @@ mod tests {
         let prover = &agent.prover;
 
         let mut proofs: Vec<ShardProof<CoreSC>> = vec![];
-        let elf_path = metadata_dir.join("elf/keccak-elf");
+        let elf_path = metadata_dir.join("elf/keccak-elf.bin");
         let (elf, vk, _, _, challenger) =
             setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
 

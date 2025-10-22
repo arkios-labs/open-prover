@@ -32,7 +32,7 @@ mod tests {
 
         let prover = &agent.prover;
 
-        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path = metadata_dir.join("elf/fibonacci-elf.bin");
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
         let (_, vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
