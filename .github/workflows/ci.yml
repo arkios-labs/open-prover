@@ -41,8 +41,8 @@ jobs:
           docker version --format 'Client={{.Client.Version}} Server={{.Server.Version}}'
 
       - name: Run GPU build
-        run: cargo build --release --features=gpu --locked
+        run: cargo build --release --features=cuda --locked
 
       # Restricting tests to a single thread to avoid invalid memory errors.
       - name: Run GPU test
-        run: cargo test --release --features=gpu --locked -- --nocapture --test-threads=1
+        run: cargo test --release --features=cuda --locked -- --nocapture --test-threads=1

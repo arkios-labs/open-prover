@@ -31,7 +31,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
 
-#[cfg(feature = "gpu")]
+#[cfg(feature = "cuda")]
 use sp1_stark::MachineProvingKey;
 
 impl Sp1Agent {

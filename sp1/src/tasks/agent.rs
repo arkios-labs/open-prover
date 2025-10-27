@@ -2,13 +2,13 @@ use anyhow::Result;
 use cfg_if::cfg_if;
 use sp1_prover::{DeviceProvingKey, InnerSC, SP1Prover};
 use sp1_recursion_circuit::machine::SP1CompressWithVkeyShape;
-use sp1_stark::{MachineProver, SP1ProverOpts, StarkVerifyingKey};
+use sp1_stark::{MachineProver, SP1ProverOpts, SplitOpts, StarkVerifyingKey};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
-#[cfg(feature = "gpu")]
+#[cfg(feature = "cuda")]
 pub type ClusterProverComponents = moongate_prover::components::GpuProverComponents;
-#[cfg(not(feature = "gpu"))]
+#[cfg(not(feature = "cuda"))]
 pub type ClusterProverComponents = sp1_prover::components::CpuProverComponents;
 
 pub type CachedKeys = Arc<(DeviceProvingKey<ClusterProverComponents>, StarkVerifyingKey<InnerSC>)>;
@@ -22,7 +22,7 @@ pub struct Sp1Agent {
 impl Sp1Agent {
     pub fn new() -> Result<Self> {
         cfg_if! {
-            if #[cfg(feature = "gpu")] {
+            if #[cfg(feature = "cuda")] {
                 let inner_prover: SP1Prover<ClusterProverComponents> = moongate_prover::SP1GpuProver::new();
             } else {
                 let inner_prover: SP1Prover<ClusterProverComponents> = SP1Prover::new();
@@ -37,16 +37,15 @@ impl Sp1Agent {
             compress_keys.insert(shape.clone(), Arc::new((pk, vk)));
         }
 
-        Ok(Self {
-            prover,
-            prover_opts: SP1ProverOpts::default(),
-            compress_keys: RwLock::new(compress_keys),
-        })
+        let mut prover_opts = SP1ProverOpts::default();
+        prover_opts.core_opts.shard_size = 1 << 14;
+        prover_opts.core_opts.split_opts = SplitOpts::new(1 << 8);
+        Ok(Self { prover, prover_opts, compress_keys: RwLock::new(compress_keys) })
     }
 
     pub fn name(&self) -> &'static str {
         cfg_if! {
-            if #[cfg(feature = "gpu")] {
+            if #[cfg(feature = "cuda")] {
                 "sp1-gpu"
             } else {
                 "sp1-cpu"

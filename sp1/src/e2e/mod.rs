@@ -1,5 +1,4 @@
 mod compressed;
-mod core;
 mod groth16;
 mod plonk;
 mod wrap;
@@ -69,5 +68,37 @@ pub mod tests {
         let elf = deserialize_from_bincode_bytes(&elf).context("Failed to deserialize elf")?;
 
         Ok((elf, vk, deferred_inputs, deferred_digest, challenger))
+    }
+
+    fn cpu_model() -> String {
+        #[cfg(target_os = "linux")]
+        {
+            std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default().to_lowercase()
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            use std::process::Command;
+
+            let output = Command::new("sysctl")
+                .args(["-n", "machdep.cpu.brand_string"])
+                .output()
+                .expect("failed to run sysctl");
+            String::from_utf8_lossy(&output.stdout).to_lowercase()
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let output = Command::new("wmic")
+                .args(["cpu", "get", "name"])
+                .output()
+                .expect("failed to run wmic");
+            String::from_utf8_lossy(&output.stdout).to_lowercase()
+        }
+    }
+
+    pub fn is_cpu_ryzen_9_9950x3d() -> bool {
+        let model = cpu_model();
+        model.to_uppercase().contains("AMD RYZEN 9 9950X3D")
     }
 }

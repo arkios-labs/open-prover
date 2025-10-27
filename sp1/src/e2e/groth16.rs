@@ -31,7 +31,7 @@ mod tests {
                 .expect("Failed to deserialize proof");
 
         let prover = &agent.prover;
-        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path = metadata_dir.join("elf/fibonacci-elf.bin");
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
         let (_, vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
@@ -56,7 +56,7 @@ mod tests {
     fn test_verify_groth16_proof() -> Result<()> {
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
-        let elf_path = metadata_dir.join("elf/fibonacci-elf");
+        let elf_path = metadata_dir.join("elf/fibonacci-elf.bin");
 
         let stdin_path = metadata_dir.join("stdin/fibonacci-elf_shardsize_14_stdin.bin");
         let (_, vk, _, _, _) = setup(&agent, &elf_path, &stdin_path).context("Failed to setup")?;
