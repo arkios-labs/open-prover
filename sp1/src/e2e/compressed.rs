@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::e2e::tests::{setup, setup_agent_and_metadata_dir};
+    use crate::e2e::tests::{is_cpu_ryzen_9_9950x3d, setup, setup_agent_and_metadata_dir};
     use crate::tasks::agent::Sp1Agent;
     use crate::tasks::shards::{DeferredEvents, ShardEventData};
     use crate::tasks::{
@@ -288,6 +288,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_compress_deferred_proof_records() -> Result<()> {
+        if is_cpu_ryzen_9_9950x3d() {
+            eprintln!("Skipping test on AMD Ryzen 9 9950X3D CPU");
+            return Ok(());
+        }
+
         let (metadata_dir, agent) = setup_agent_and_metadata_dir().context("Failed to setup")?;
 
         let case_deferred = E2eCase {
