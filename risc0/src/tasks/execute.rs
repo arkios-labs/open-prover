@@ -15,6 +15,7 @@ pub struct ExecuteResult {
     pub assumptions: Vec<(Assumption, AssumptionReceipt)>,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum ExecuteMessage {
     Segment(Segment),
     Keccak(ProveKeccakRequest),
@@ -50,10 +51,7 @@ impl Iterator for BufferedIterator {
     type Item = ExecuteMessage;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.rx.recv() {
-            Ok(message) => Some(message),
-            Err(_) => None,
-        }
+        self.rx.recv().ok()
     }
 }
 

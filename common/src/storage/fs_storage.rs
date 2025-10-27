@@ -15,7 +15,7 @@ impl FileSystemStorage {
         if !root_path.exists() {
             fs::create_dir_all(&root_path)
                 .await
-                .with_context(|| format!("Failed to create root directory: {:?}", root_path))?;
+                .with_context(|| format!("Failed to create root directory: {root_path:?}"))?;
         }
 
         Ok(Self { root_path })
@@ -27,7 +27,7 @@ impl StorageError {
         match error.kind() {
             io::ErrorKind::NotFound => StorageError::NotFound { path },
             io::ErrorKind::PermissionDenied => StorageError::PermissionDenied { path },
-            _ => StorageError::Unknown(format!("Unknown IO error: {}", error)),
+            _ => StorageError::Unknown(format!("Unknown IO error: {error}")),
         }
     }
 }

@@ -56,12 +56,12 @@ pub fn generate_fixtures(
 
     let metadata_dir = PathBuf::from(METADATA_PATH);
     fs::create_dir_all(&metadata_dir).context("Failed to create metadata directory")?;
-    fs::write(&metadata_dir.join(ELF_DATA_PATH), &serialize_to_bincode_bytes(&elf_data)?)?;
-    fs::write(&metadata_dir.join(INPUT_DATA_PATH), &serialize_to_bincode_bytes(&input_data)?)?;
+    fs::write(metadata_dir.join(ELF_DATA_PATH), &serialize_to_bincode_bytes(&elf_data)?)?;
+    fs::write(metadata_dir.join(INPUT_DATA_PATH), &serialize_to_bincode_bytes(&input_data)?)?;
 
     {
-        let mut messages = agent.execute(SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
-        while let Some(message) = messages.next() {
+        let messages = agent.execute(SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
+        for message in messages {
             match message {
                 ExecuteMessage::Segment(seg) => segments.push(seg),
                 ExecuteMessage::Keccak(kecc) => keccaks.push(kecc),
@@ -85,19 +85,20 @@ pub fn generate_fixtures(
 
     let result = result.unwrap();
 
-    fs::create_dir_all(&metadata_dir.join("session"))
+    fs::create_dir_all(metadata_dir.join("session"))
         .context("Failed to create session directory")?;
-    fs::create_dir_all(&metadata_dir.join("receipt"))
+    fs::create_dir_all(metadata_dir.join("receipt"))
         .context("Failed to create receipt directory")?;
-    fs::write(&metadata_dir.join(SEGMENTS_PATH), &serialize_to_bincode_bytes(&segments)?)?;
-    fs::write(&metadata_dir.join(KECCAKS_PATH), &serialize_to_bincode_bytes(&keccaks)?)?;
+
+    fs::write(metadata_dir.join(SEGMENTS_PATH), &serialize_to_bincode_bytes(&segments)?)?;
+    fs::write(metadata_dir.join(KECCAKS_PATH), &serialize_to_bincode_bytes(&keccaks)?)?;
 
     fs::write(
-        &metadata_dir.join(JOURNAL_PATH),
+        metadata_dir.join(JOURNAL_PATH),
         &serialize_to_bincode_bytes(&result.journal.clone().unwrap())?,
     )?;
     fs::write(
-        &metadata_dir.join(ASSUMPTIONS_PATH),
+        metadata_dir.join(ASSUMPTIONS_PATH),
         &serialize_to_bincode_bytes(&result.assumptions.clone())?,
     )?;
 
@@ -109,7 +110,7 @@ pub fn generate_fixtures(
         segment_lifted_receipts.push(deserialize_obj(&lifted_segment)?);
     }
     fs::write(
-        &metadata_dir.join(SEGMENT_LIFTED_RECEIPTS_PATH),
+        metadata_dir.join(SEGMENT_LIFTED_RECEIPTS_PATH),
         &serialize_to_bincode_bytes(&segment_lifted_receipts)?,
     )?;
 
@@ -120,7 +121,7 @@ pub fn generate_fixtures(
         keccak_receipts.push(deserialize_obj(&lifted_keccak)?);
     }
     fs::write(
-        &metadata_dir.join(KECCAK_RECEIPTS_PATH),
+        metadata_dir.join(KECCAK_RECEIPTS_PATH),
         &serialize_to_bincode_bytes(&keccak_receipts)?,
     )?;
 
@@ -134,7 +135,7 @@ pub fn generate_fixtures(
     )?;
     let join_root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&join_root_receipt)?;
     fs::write(
-        &metadata_dir.join(JOIN_ROOT_RECEIPT_PATH),
+        metadata_dir.join(JOIN_ROOT_RECEIPT_PATH),
         &serialize_to_bincode_bytes(&join_root_receipt)?,
     )?;
 
@@ -148,7 +149,7 @@ pub fn generate_fixtures(
     )?;
     let union_root_receipt: SuccinctReceipt<Unknown> = deserialize_obj(&union_root_receipt)?;
     fs::write(
-        &metadata_dir.join(UNION_ROOT_RECEIPT_PATH),
+        metadata_dir.join(UNION_ROOT_RECEIPT_PATH),
         &serialize_to_bincode_bytes(&union_root_receipt)?,
     )?;
 
@@ -161,7 +162,7 @@ pub fn generate_fixtures(
         .context("Failed to resolve")?;
     let resolved_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&resolved_receipt)?;
     fs::write(
-        &metadata_dir.join(RESOLVED_RECEIPT_PATH),
+        metadata_dir.join(RESOLVED_RECEIPT_PATH),
         &serialize_to_bincode_bytes(&resolved_receipt)?,
     )?;
 
@@ -173,10 +174,7 @@ pub fn generate_fixtures(
         ])?)
         .context("Failed to finalize")?;
     let final_receipt: Receipt = deserialize_obj(&final_receipt)?;
-    fs::write(
-        &metadata_dir.join(FINAL_RECEIPT_PATH),
-        &serialize_to_bincode_bytes(&final_receipt)?,
-    )?;
+    fs::write(metadata_dir.join(FINAL_RECEIPT_PATH), &serialize_to_bincode_bytes(&final_receipt)?)?;
 
     Ok((metadata_dir, agent))
 }

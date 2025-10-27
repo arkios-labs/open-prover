@@ -74,7 +74,7 @@ impl Risc0Agent {
 
                 let assumption_receipt =
                     assumption_receipt_map.get(&assumption_claim).with_context(|| {
-                        format!("Corroborating receipt not found: {}", assumption_claim)
+                        format!("Corroborating receipt not found: {assumption_claim}")
                     })?;
 
                 root = self

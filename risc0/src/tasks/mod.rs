@@ -124,7 +124,7 @@ where
 {
     let mut queue = receipts;
     while queue.len() > 1 {
-        let mut next_level = VecDeque::with_capacity((queue.len() + 1) / 2);
+        let mut next_level = VecDeque::with_capacity(queue.len().div_ceil(2));
         while let Some(left) = queue.pop_front() {
             if let Some(right) = queue.pop_front() {
                 let joined = func(left, right).context("Failed to join receipts")?;
