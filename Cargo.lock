@@ -5852,7 +5852,6 @@ dependencies = [
  "common",
  "hex",
  "risc0-zkvm 3.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "risc0-zkvm-methods",
  "serde",
  "serde_json",
  "tempfile",
@@ -6157,6 +6156,21 @@ source = "git+https://github.com/risc0/risc0.git?tag=v3.0.3#14b5d588dd01cf4f7ba8
 dependencies = [
  "bytemuck",
  "rand_core 0.9.3",
+]
+
+[[package]]
+name = "risc0-fixtures"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "risc0",
+ "risc0-zkvm 3.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "risc0-zkvm-methods",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber 0.3.19",
 ]
 
 [[package]]

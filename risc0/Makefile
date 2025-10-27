@@ -14,3 +14,6 @@ arm:
 amd64:
 	cargo zigbuild --target x86_64-unknown-linux-musl --release
 	cp ./target/x86_64-unknown-linux-musl/release/r0_prover ./r0_prover_amd64
+
+fixtures:
+	cargo run --release --package risc0-fixtures

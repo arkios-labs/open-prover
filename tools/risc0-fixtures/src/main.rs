@@ -23,7 +23,7 @@ const SEGMENT_LIMIT_PO2: u32 = 18;
 const KECCAK_LIMIT_PO2: u32 = 16;
 
 fn main() {
-    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init().unwrap();
+    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
 
     let elf_data = MULTI_TEST_ELF.to_vec();
     let image_id = compute_image_id(&elf_data).context("Failed to compute image id").unwrap();
@@ -47,8 +47,6 @@ pub fn generate_fixtures(
     image_id: Digest,
     input_data: Vec<u32>,
 ) -> Result<(PathBuf, Risc0Agent)> {
-    let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
-
     let agent = Risc0Agent::new().context("Failed to create agent")?;
 
     let mut segments: Vec<Segment> = Vec::new();
@@ -83,6 +81,10 @@ pub fn generate_fixtures(
 
     let metadata_dir = PathBuf::from(METADATA_PATH);
     fs::create_dir_all(&metadata_dir).context("Failed to create metadata directory")?;
+    fs::create_dir_all(&metadata_dir.join("session"))
+        .context("Failed to create session directory")?;
+    fs::create_dir_all(&metadata_dir.join("receipt"))
+        .context("Failed to create receipt directory")?;
     fs::write(&metadata_dir.join(SEGMENTS_PATH), &serialize_to_bincode_bytes(&segments)?)?;
     fs::write(&metadata_dir.join(KECCAKS_PATH), &serialize_to_bincode_bytes(&keccaks)?)?;
 

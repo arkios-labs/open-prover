@@ -2,6 +2,12 @@
 members = [
     "common",
     "risc0",
+    "sp1",
+    "tools/risc0-fixtures"    
+]
+default-members = [
+    "common",
+    "risc0",
     "sp1"
 ]
 resolver = "3"
