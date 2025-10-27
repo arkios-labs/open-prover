@@ -43,4 +43,4 @@ uuid = { version = "1.18.1", features = ["v7"] }
 default = []
 # Enable GPU support by including moongate-core and moongate-prover dependencies
 # https://github.com/succinctlabs/cluster/blob/bf1c2b2/crates/worker/Cargo.toml#L12
-gpu = ["dep:moongate-core", "dep:moongate-prover"]
+cuda = ["dep:moongate-core", "dep:moongate-prover"]

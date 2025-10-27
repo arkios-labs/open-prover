@@ -6,9 +6,9 @@ use sp1_stark::{MachineProver, SP1ProverOpts, SplitOpts, StarkVerifyingKey};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
-#[cfg(feature = "gpu")]
+#[cfg(feature = "cuda")]
 pub type ClusterProverComponents = moongate_prover::components::GpuProverComponents;
-#[cfg(not(feature = "gpu"))]
+#[cfg(not(feature = "cuda"))]
 pub type ClusterProverComponents = sp1_prover::components::CpuProverComponents;
 
 pub type CachedKeys = Arc<(DeviceProvingKey<ClusterProverComponents>, StarkVerifyingKey<InnerSC>)>;
@@ -22,7 +22,7 @@ pub struct Sp1Agent {
 impl Sp1Agent {
     pub fn new() -> Result<Self> {
         cfg_if! {
-            if #[cfg(feature = "gpu")] {
+            if #[cfg(feature = "cuda")] {
                 let inner_prover: SP1Prover<ClusterProverComponents> = moongate_prover::SP1GpuProver::new();
             } else {
                 let inner_prover: SP1Prover<ClusterProverComponents> = SP1Prover::new();
@@ -45,7 +45,7 @@ impl Sp1Agent {
 
     pub fn name(&self) -> &'static str {
         cfg_if! {
-            if #[cfg(feature = "gpu")] {
+            if #[cfg(feature = "cuda")] {
                 "sp1-gpu"
             } else {
                 "sp1-cpu"

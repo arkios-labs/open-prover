@@ -5,5 +5,5 @@ build:
 	cp ../target/release/sp1 ./$(BINARY_NAME)
 
 build-gpu:
-	cargo build --release --features=gpu
+	cargo build --release --features=cuda
 	cp ../target/release/sp1 ./$(BINARY_NAME)
