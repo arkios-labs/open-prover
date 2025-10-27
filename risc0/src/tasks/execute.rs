@@ -137,8 +137,10 @@ impl Risc0Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use risc0_zkvm::serde::to_vec;
-    use risc0_zkvm_methods::{MULTI_TEST_ELF, multi_test::MultiTestSpec};
+
+    use crate::tasks::test_constants::{ELF_DATA_PATH, INPUT_DATA_PATH, METADATA_PATH};
+    use common::serialization::bincode::deserialize_from_bincode_bytes;
+    use std::{fs, path::PathBuf};
 
     fn setup_agent() -> Risc0Agent {
         let agent = Risc0Agent::new().unwrap();
@@ -149,15 +151,17 @@ mod tests {
     fn test_execute_keccak_union() {
         let agent = setup_agent();
 
-        let proof_count = 1;
         let segment_limit_po2 = 18;
         let keccak_limit_po2 = 16;
 
-        let elf_data = MULTI_TEST_ELF.to_vec();
+        let metadata_dir = PathBuf::from(METADATA_PATH);
+        let elf_bytes = fs::read(&metadata_dir.join(ELF_DATA_PATH)).unwrap();
+        let elf_data = deserialize_from_bincode_bytes(&elf_bytes).unwrap();
         let known_elf_total_cycles = 917504; // from previous runs
-        let input: Vec<u32> = to_vec(&MultiTestSpec::KeccakUnion(proof_count)).unwrap();
+        let input_bytes: Vec<u8> = fs::read(&metadata_dir.join(INPUT_DATA_PATH)).unwrap();
+        let input_data: Vec<u32> = deserialize_from_bincode_bytes(&input_bytes).unwrap();
 
-        let mut messages = agent.execute(segment_limit_po2, keccak_limit_po2, elf_data, input);
+        let mut messages = agent.execute(segment_limit_po2, keccak_limit_po2, elf_data, input_data);
 
         let mut segment_count: u64 = 0;
         let mut keccak_count: u64 = 0;

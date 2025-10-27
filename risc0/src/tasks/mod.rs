@@ -143,6 +143,8 @@ pub mod test_constants {
     pub const FIXTURES_IMAGE_ID: &str =
         "8edff446235f5e628e89a627661ec2d1c13c4467beb0a7c669709ea36b5c9a1a"; // MultiTestSpec::KeccakUnion(1)
     pub const METADATA_PATH: &str = "metadata";
+    pub const ELF_DATA_PATH: &str = "elf_data.bin";
+    pub const INPUT_DATA_PATH: &str = "input_data.bin";
     pub const SEGMENTS_PATH: &str = "session/segments.bin";
     pub const KECCAKS_PATH: &str = "session/keccaks.bin";
     pub const JOURNAL_PATH: &str = "session/journal.bin";

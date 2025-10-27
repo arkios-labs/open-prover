@@ -13,9 +13,10 @@ use risc0::tasks::{
     execute::{ExecuteMessage, ExecuteResult},
     serialize_obj,
     test_constants::{
-        ASSUMPTIONS_PATH, FINAL_RECEIPT_PATH, JOIN_ROOT_RECEIPT_PATH, JOURNAL_PATH,
-        KECCAK_RECEIPTS_PATH, KECCAKS_PATH, METADATA_PATH, RESOLVED_RECEIPT_PATH,
-        SEGMENT_LIFTED_RECEIPTS_PATH, SEGMENTS_PATH, UNION_ROOT_RECEIPT_PATH,
+        ASSUMPTIONS_PATH, ELF_DATA_PATH, FINAL_RECEIPT_PATH, INPUT_DATA_PATH,
+        JOIN_ROOT_RECEIPT_PATH, JOURNAL_PATH, KECCAK_RECEIPTS_PATH, KECCAKS_PATH, METADATA_PATH,
+        RESOLVED_RECEIPT_PATH, SEGMENT_LIFTED_RECEIPTS_PATH, SEGMENTS_PATH,
+        UNION_ROOT_RECEIPT_PATH,
     },
 };
 
@@ -53,6 +54,11 @@ pub fn generate_fixtures(
     let mut keccaks: Vec<ProveKeccakRequest> = Vec::new();
     let mut result: Option<ExecuteResult> = None;
 
+    let metadata_dir = PathBuf::from(METADATA_PATH);
+    fs::create_dir_all(&metadata_dir).context("Failed to create metadata directory")?;
+    fs::write(&metadata_dir.join(ELF_DATA_PATH), &serialize_to_bincode_bytes(&elf_data)?)?;
+    fs::write(&metadata_dir.join(INPUT_DATA_PATH), &serialize_to_bincode_bytes(&input_data)?)?;
+
     {
         let mut messages = agent.execute(SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
         while let Some(message) = messages.next() {
@@ -79,8 +85,6 @@ pub fn generate_fixtures(
 
     let result = result.unwrap();
 
-    let metadata_dir = PathBuf::from(METADATA_PATH);
-    fs::create_dir_all(&metadata_dir).context("Failed to create metadata directory")?;
     fs::create_dir_all(&metadata_dir.join("session"))
         .context("Failed to create session directory")?;
     fs::create_dir_all(&metadata_dir.join("receipt"))
