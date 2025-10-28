@@ -40,6 +40,11 @@ jobs:
         run: |
           docker version --format 'Client={{.Client.Version}} Server={{.Server.Version}}'
 
+      - name: Install risc0 groth16 component (for snark tests)
+        run: |
+          curl -L https://risczero.com/install | bash
+          $HOME/.risc0/bin/rzup install risc0-groth16
+
       - name: Run GPU build
         run: cargo build --release --features=cuda --locked
 
