@@ -1,4 +1,4 @@
-use crate::storage::{Storage, StorageError};
+use crate::storage::{Storage, StorageError, StorageType};
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
@@ -34,6 +34,10 @@ impl StorageError {
 
 #[async_trait]
 impl Storage for FileSystemStorage {
+    fn get_type(&self) -> StorageType {
+        StorageType::EFS
+    }
+
     async fn get(&self, file_path: &str) -> Result<Vec<u8>, StorageError> {
         let path = self.root_path.join(file_path);
         let data = fs::read(&path)

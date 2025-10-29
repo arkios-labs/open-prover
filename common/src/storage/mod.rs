@@ -15,8 +15,14 @@ pub enum StorageError {
     Unknown(String),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum StorageType {
+    EFS,
+}
+
 #[async_trait]
 pub trait Storage {
+    fn get_type(&self) -> StorageType;
     async fn get(&self, file_path: &str) -> Result<Vec<u8>, StorageError>;
     async fn put(&self, file_path: &str, data: &[u8]) -> Result<(), StorageError>;
     async fn delete(&self, file_path: &str) -> Result<(), StorageError>;
