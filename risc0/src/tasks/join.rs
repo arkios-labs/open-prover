@@ -1,43 +1,32 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
+use risc0_zkvm::{ReceiptClaim, SuccinctReceipt};
 use tracing::info;
 
-use crate::tasks::{Risc0Agent, deserialize_obj, serialize_obj};
+use crate::tasks::Risc0Agent;
 
 impl Risc0Agent {
-    pub fn join(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn join(
+        &self,
+        left_receipt: SuccinctReceipt<ReceiptClaim>,
+        right_receipt: SuccinctReceipt<ReceiptClaim>,
+    ) -> Result<SuccinctReceipt<ReceiptClaim>> {
         info!("Agent::join()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("join input is empty");
-        }
-
-        let receipts: Vec<Vec<u8>> =
-            serde_json::from_slice(&input).context("Failed to parse input as Vec<Vec<u8>>")?;
-
-        if receipts.len() != 2 {
-            bail!("Expected exactly two receipts for join, got {}", receipts.len());
-        }
-
-        let left_receipt =
-            deserialize_obj(&receipts[0]).context("Failed to deserialize left receipt")?;
-        let right_receipt =
-            deserialize_obj(&receipts[1]).context("Failed to deserialize right receipt")?;
-
         let joined = self.prover.join(&left_receipt, &right_receipt)?;
 
-        let serialized = serialize_obj(&joined).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
         info!("Agent::join() took {elapsed:?}");
-        Ok(serialized)
+
+        Ok(joined)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir, test_constants};
+    use crate::tasks::{setup_agent_and_metadata_dir, test_constants};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::deserialize_from_bincode_bytes;
@@ -60,20 +49,19 @@ mod tests {
 
         info!("Loaded {receipt_count} lifted receipts");
 
-        let serialized_receipts: Vec<Vec<u8>> =
-            lifted_receipts.into_iter().map(|r| serialize_obj(&r).unwrap()).collect();
-
-        let mut queue: VecDeque<Vec<u8>> = VecDeque::from(serialized_receipts);
+        let mut queue: VecDeque<SuccinctReceipt<ReceiptClaim>> = VecDeque::from(lifted_receipts);
 
         while queue.len() > 1 {
-            let mut next_level: VecDeque<Vec<u8>> = VecDeque::with_capacity((queue.len() + 1) / 2);
+            let mut next_level: VecDeque<SuccinctReceipt<ReceiptClaim>> =
+                VecDeque::with_capacity((queue.len() + 1) / 2);
 
             while let Some(left) = queue.pop_front() {
                 if let Some(right) = queue.pop_front() {
-                    let join_input =
-                        serde_json::to_vec(&vec![left, right]).context("serialize failed")?;
-                    let joined = agent.join(join_input).context("Union failed")?;
-                    assert!(!joined.is_empty(), "Joined result should not be empty");
+                    let joined = agent.join(left, right)?;
+                    assert!(
+                        !joined.get_seal_bytes().is_empty(),
+                        "Joined result should not be empty"
+                    );
                     next_level.push_back(joined);
                 } else {
                     next_level.push_back(left);
@@ -91,7 +79,7 @@ mod tests {
 
         let final_result = queue.pop_front().unwrap();
 
-        info!("join result: ({size} bytes)", size = final_result.len());
+        info!("join result: ({size} bytes)", size = final_result.get_seal_bytes().len());
 
         Ok(())
     }

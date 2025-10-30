@@ -1,20 +1,15 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
+use risc0_zkvm::{ReceiptClaim, Segment, SuccinctReceipt};
 use tracing::info;
 
-use crate::tasks::{Risc0Agent, deserialize_obj, serialize_obj};
+use crate::tasks::Risc0Agent;
 
 impl Risc0Agent {
-    pub fn prove(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn prove(&self, segment: Segment) -> Result<SuccinctReceipt<ReceiptClaim>> {
         info!("Agent::prove()");
         let start_time = Instant::now();
-
-        if input.is_empty() {
-            bail!("prove input is empty");
-        }
-
-        let segment = deserialize_obj(&input).context("Failed to deserialize segment")?;
 
         let segment_receipt = self
             .prover
@@ -24,23 +19,22 @@ impl Risc0Agent {
         let lift_receipt =
             self.prover.lift(&segment_receipt).with_context(|| "Failed to lift".to_string())?;
 
-        let serialized = serialize_obj(&lift_receipt).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
         info!("Agent::prove() took {elapsed:?}");
-        Ok(serialized)
+        Ok(lift_receipt)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::tasks::setup_agent_and_metadata_dir;
     use crate::tasks::test_constants;
-    use crate::tasks::{deserialize_obj, serialize_obj, setup_agent_and_metadata_dir};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
-    use risc0_zkvm::{ReceiptClaim, Segment, SuccinctReceipt};
+    use risc0_zkvm::Segment;
     use std::fs;
     use tracing::info;
 
@@ -62,25 +56,19 @@ mod tests {
         for (i, segment) in segments.iter().enumerate() {
             let current_index = i + 1;
             info!("Proving segment [{current_index}/{segment_count}]");
-            let bytes = serialize_obj(segment)?;
-            let lifted_bytes = agent.prove(bytes)?;
+            let lift_receipt = agent.prove(segment.clone())?;
 
             assert!(
-                !lifted_bytes.is_empty(),
+                !lift_receipt.get_seal_bytes().is_empty(),
                 "Lifted bytes should not be empty for segment {current_index}"
             );
 
             info!(
                 "Segment [{current_index}] proof size: {proof_size}",
-                proof_size = lifted_bytes.len()
+                proof_size = lift_receipt.seal_size()
             );
 
-            let lifted_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&lifted_bytes)
-                .context(format!("Failed to deserialize receipt for segment {current_index}"))?;
-
-            assert!(lifted_receipt.claim.as_value().is_ok(), "Lifted receipt should have a claim");
-
-            all_receipts.push(lifted_receipt);
+            all_receipts.push(lift_receipt);
         }
 
         let receipts_serialized = serialize_to_bincode_bytes(&all_receipts)?;

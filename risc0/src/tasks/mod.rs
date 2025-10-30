@@ -99,7 +99,7 @@ pub fn serialize_obj<T: Serialize>(item: &T) -> Result<Vec<u8>> {
     Ok(json_str.into_bytes())
 }
 
-fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
+pub(crate) fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
     ProveKeccakRequest {
         claim_digest: local.claim_digest,
         po2: local.po2,
@@ -118,9 +118,9 @@ pub fn setup_agent_and_metadata_dir() -> Result<(PathBuf, Risc0Agent)> {
     Ok((metadata_dir, agent))
 }
 
-pub fn compress_binary_tree<F>(func: F, receipts: VecDeque<Vec<u8>>) -> Result<Vec<u8>>
+pub fn compress_binary_tree<F, R>(func: F, receipts: VecDeque<R>) -> Result<R>
 where
-    F: Fn(Vec<u8>, Vec<u8>) -> Result<Vec<u8>>,
+    F: Fn(R, R) -> Result<R>,
 {
     let mut queue = receipts;
     while queue.len() > 1 {

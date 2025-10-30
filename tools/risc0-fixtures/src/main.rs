@@ -9,9 +9,8 @@ use risc0_zkvm::{
 use risc0_zkvm_methods::{MULTI_TEST_ELF, multi_test::MultiTestSpec};
 
 use risc0::tasks::{
-    Risc0Agent, compress_binary_tree, deserialize_obj,
+    Risc0Agent, compress_binary_tree,
     execute::{ExecuteMessage, ExecuteResult},
-    serialize_obj,
     test_constants::{
         ASSUMPTIONS_PATH, ELF_DATA_PATH, FINAL_RECEIPT_PATH, INPUT_DATA_PATH,
         JOIN_ROOT_RECEIPT_PATH, JOURNAL_PATH, KECCAK_RECEIPTS_PATH, KECCAKS_PATH, METADATA_PATH,
@@ -105,9 +104,8 @@ pub fn generate_fixtures(
     let mut segment_lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> =
         Vec::with_capacity(segments.len());
     for segment in segments {
-        let lifted_segment =
-            agent.prove(serialize_obj(&segment)?).context("Failed to prove segment")?;
-        segment_lifted_receipts.push(deserialize_obj(&lifted_segment)?);
+        let lifted_segment = agent.prove(segment)?;
+        segment_lifted_receipts.push(lifted_segment);
     }
     fs::write(
         metadata_dir.join(SEGMENT_LIFTED_RECEIPTS_PATH),
@@ -116,64 +114,43 @@ pub fn generate_fixtures(
 
     let mut keccak_receipts: Vec<SuccinctReceipt<Unknown>> = Vec::with_capacity(keccaks.len());
     for keccak in keccaks {
-        let lifted_keccak =
-            agent.keccak(serialize_obj(&keccak)?).context("Failed to prove keccak")?;
-        keccak_receipts.push(deserialize_obj(&lifted_keccak)?);
+        let lifted_keccak = agent.keccak(keccak)?;
+        keccak_receipts.push(lifted_keccak);
     }
     fs::write(
         metadata_dir.join(KECCAK_RECEIPTS_PATH),
         &serialize_to_bincode_bytes(&keccak_receipts)?,
     )?;
 
-    let segment_lifted_receipts_serialized: Vec<Vec<u8>> = segment_lifted_receipts
-        .into_iter()
-        .map(|r| serialize_obj(&r).context("Failed to serialize receipt"))
-        .collect::<Result<_, _>>()?;
     let join_root_receipt = compress_binary_tree(
-        |left, right| agent.join(serialize_obj(&vec![left, right])?),
-        VecDeque::from(segment_lifted_receipts_serialized),
+        |left, right| agent.join(left, right).context("Failed to join"),
+        VecDeque::from(segment_lifted_receipts),
     )?;
-    let join_root_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&join_root_receipt)?;
     fs::write(
         metadata_dir.join(JOIN_ROOT_RECEIPT_PATH),
         &serialize_to_bincode_bytes(&join_root_receipt)?,
     )?;
 
-    let keccak_receipts_serialized: Vec<Vec<u8>> = keccak_receipts
-        .into_iter()
-        .map(|r| serialize_obj(&r).context("Failed to serialize receipt"))
-        .collect::<Result<_, _>>()?;
     let union_root_receipt = compress_binary_tree(
-        |left, right| agent.union(serialize_obj(&vec![left, right])?),
-        VecDeque::from(keccak_receipts_serialized),
+        |left, right| agent.union(left, right).context("Failed to union"),
+        VecDeque::from(keccak_receipts),
     )?;
-    let union_root_receipt: SuccinctReceipt<Unknown> = deserialize_obj(&union_root_receipt)?;
     fs::write(
         metadata_dir.join(UNION_ROOT_RECEIPT_PATH),
         &serialize_to_bincode_bytes(&union_root_receipt)?,
     )?;
 
     let resolved_receipt = agent
-        .resolve(serde_json::to_vec(&vec![
-            serialize_obj(&join_root_receipt)?,
-            serialize_obj(&union_root_receipt)?,
-            serialize_obj(&result.assumptions)?,
-        ])?)
+        .resolve(join_root_receipt, Some(union_root_receipt), result.assumptions)
         .context("Failed to resolve")?;
-    let resolved_receipt: SuccinctReceipt<ReceiptClaim> = deserialize_obj(&resolved_receipt)?;
     fs::write(
         metadata_dir.join(RESOLVED_RECEIPT_PATH),
         &serialize_to_bincode_bytes(&resolved_receipt)?,
     )?;
 
     let final_receipt = agent
-        .finalize(serialize_obj(&vec![
-            serialize_obj(&resolved_receipt)?,
-            result.journal.unwrap().bytes,
-            serialize_obj(&image_id.to_string())?,
-        ])?)
+        .finalize(resolved_receipt, result.journal.unwrap(), image_id.to_string())
         .context("Failed to finalize")?;
-    let final_receipt: Receipt = deserialize_obj(&final_receipt)?;
     fs::write(metadata_dir.join(FINAL_RECEIPT_PATH), &serialize_to_bincode_bytes(&final_receipt)?)?;
 
     Ok((metadata_dir, agent))

@@ -1,37 +1,22 @@
 use std::{collections::HashMap, time::Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use risc0_zkvm::{
     Assumption, AssumptionReceipt, ReceiptClaim, SuccinctReceipt, Unknown, sha::Digestible,
 };
 use tracing::info;
 
-use crate::tasks::{Risc0Agent, deserialize_obj, serialize_obj};
+use crate::tasks::Risc0Agent;
 
 impl Risc0Agent {
-    pub fn resolve(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn resolve(
+        &self,
+        mut root: SuccinctReceipt<ReceiptClaim>,
+        union: Option<SuccinctReceipt<Unknown>>,
+        pairs: Vec<(Assumption, AssumptionReceipt)>,
+    ) -> Result<SuccinctReceipt<ReceiptClaim>> {
         info!("Agent::resolve()");
         let start_time = Instant::now();
-
-        if input.is_empty() {
-            bail!("resolve input is empty");
-        }
-
-        let inputs: Vec<Vec<u8>> = serde_json::from_slice(&input)
-            .context("Failed to parse input as Vec<Vec<u8>> for resolve")?;
-
-        if inputs.len() != 3 {
-            bail!("Expected exactly three inputs for resolve, got {}", inputs.len())
-        }
-
-        let mut root: SuccinctReceipt<ReceiptClaim> =
-            deserialize_obj(&inputs[0]).context("Failed to deserialize root receipt")?;
-
-        let union: Option<SuccinctReceipt<Unknown>> =
-            deserialize_obj(&inputs[1]).context("Failed to deserialize union receipt")?;
-
-        let pairs: Vec<(Assumption, AssumptionReceipt)> =
-            deserialize_obj(&inputs[2]).context("Failed to deserialize assumptions")?;
 
         let (_, session_assumption_receipts): (Vec<Assumption>, Vec<AssumptionReceipt>) =
             pairs.into_iter().unzip();
@@ -88,17 +73,16 @@ impl Risc0Agent {
 
         info!("Resolve operation completed successfully: {assumptions_len}");
 
-        let serialized = serialize_obj(&root).context("Failed to serialize conditional receipt")?;
         let elapsed = start_time.elapsed();
         info!("Agent::resolve() took {elapsed:?}");
-        Ok(serialized)
+        Ok(root)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::tasks::setup_agent_and_metadata_dir;
     use crate::tasks::test_constants;
-    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::deserialize_from_bincode_bytes;
@@ -131,20 +115,10 @@ mod tests {
             deserialize_from_bincode_bytes(&union_root_serialized)
                 .context("Failed to deserialize")?;
 
-        let join_root_serialized = serialize_obj(&join_root_receipt)?;
-        let union_root_serialized = serialize_obj(&union_root_receipt)?;
-        let assumptions_serialized = serialize_obj(&assumptions)?;
+        let resolved_receipt =
+            agent.resolve(join_root_receipt, Some(union_root_receipt), assumptions)?;
 
-        let resolve_input = serde_json::to_vec(&vec![
-            join_root_serialized,
-            union_root_serialized,
-            assumptions_serialized,
-        ])
-        .context("Failed to serialize join input")?;
-
-        let resolved_receipt = agent.resolve(resolve_input)?;
-
-        info!("resolve result: ({size} bytes)", size = resolved_receipt.len());
+        info!("resolve result: ({size} bytes)", size = resolved_receipt.seal_size());
 
         Ok(())
     }

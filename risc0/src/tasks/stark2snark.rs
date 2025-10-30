@@ -1,20 +1,13 @@
-use crate::tasks::{Risc0Agent, deserialize_obj, serialize_obj};
-use anyhow::{Context, Result, bail};
+use crate::tasks::Risc0Agent;
+use anyhow::{Context, Result};
 use risc0_zkvm::{ProverOpts, Receipt};
 use std::time::Instant;
 use tracing::info;
 
 impl Risc0Agent {
-    pub fn stark2snark(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn stark2snark(&self, stark_receipt: Receipt) -> Result<Receipt> {
         info!("Agent::stark2snark()");
         let start_time = Instant::now();
-
-        if input.is_empty() {
-            bail!("get_snark_receipt input is empty");
-        }
-
-        let stark_receipt: Receipt =
-            deserialize_obj(&input).context("Failed to parse stark_receipt")?;
 
         let opts = ProverOpts::groth16();
         // Implemented based on newly introduced logic in Bento.
@@ -24,22 +17,20 @@ impl Risc0Agent {
             .compress(&opts, &stark_receipt)
             .context("Failed to compress stark receipt")?;
 
-        let serialized =
-            serialize_obj(&snark_receipt).context("Failed to serialize SNARK receipt")?;
         let elapsed = start_time.elapsed();
         info!("Agent::stark2snark() took {elapsed:?}");
-        Ok(serialized)
+        Ok(snark_receipt)
     }
 }
 
 #[cfg(test)]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod tests {
-    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir, test_constants};
+    use crate::tasks::{setup_agent_and_metadata_dir, test_constants};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::deserialize_from_bincode_bytes;
-    use risc0_zkvm::{Receipt, Unknown};
+    use risc0_zkvm::Receipt;
     use std::fs;
     use tracing::info;
 
@@ -56,14 +47,11 @@ mod tests {
         let stark_receipt: Receipt = deserialize_from_bincode_bytes(&stark_receipt_serialized)
             .context("Failed to deserialize")?;
 
-        let stark_receipt_serialized =
-            serialize_obj(&stark_receipt).context("Failed to serialize")?;
-
         let snark_receipt = agent
-            .stark2snark(stark_receipt_serialized)
+            .stark2snark(stark_receipt)
             .context("stark2snark conversion failed: could not convert stark receipt to snark")?;
 
-        info!("stark2snark result: ({size} bytes)", size = snark_receipt.len());
+        info!("stark2snark result: ({size} bytes)", size = snark_receipt.seal_size());
         Ok(())
     }
 }

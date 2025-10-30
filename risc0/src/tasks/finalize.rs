@@ -1,47 +1,35 @@
-use crate::tasks::{Risc0Agent, deserialize_obj, serialize_obj};
-use anyhow::{Context, Result, bail};
+use crate::tasks::Risc0Agent;
+use anyhow::{Context, Result};
 use hex::FromHex;
-use risc0_zkvm::{Digest, InnerReceipt, Receipt, ReceiptClaim, SuccinctReceipt};
+use risc0_zkvm::{Digest, InnerReceipt, Journal, Receipt, ReceiptClaim, SuccinctReceipt};
 use std::time::Instant;
 use tracing::info;
 
 impl Risc0Agent {
-    pub fn finalize(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn finalize(
+        &self,
+        root: SuccinctReceipt<ReceiptClaim>,
+        journal: Journal,
+        image_id: String,
+    ) -> Result<Receipt> {
         info!("Agent::finalize()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("finalize input is empty");
-        }
-
-        let inputs: Vec<Vec<u8>> = serde_json::from_slice(&input)
-            .context("Failed to parse input as Vec<Vec<u8>> for finalize")?;
-
-        if inputs.len() != 3 {
-            bail!("Expected exactly three inputs for finalize, got {}", inputs.len())
-        }
-
-        let root: SuccinctReceipt<ReceiptClaim> =
-            deserialize_obj(&inputs[0]).context("Failed to deserialize root receipt")?;
-        let journal: Vec<u8> = inputs[1].clone();
-        let image_id: String =
-            deserialize_obj(&inputs[2]).context("Failed to deserialize image_id")?;
-
-        let rollup_receipt = Receipt::new(InnerReceipt::Succinct(root), journal);
+        let rollup_receipt = Receipt::new(InnerReceipt::Succinct(root), journal.bytes);
 
         let image_id = read_image_id(&image_id)?;
         rollup_receipt.verify(image_id).context("Receipt verification failed")?;
 
         let elapsed = start_time.elapsed();
         info!("Agent::finalize() took {elapsed:?}");
-        let serialized = serialize_obj(&rollup_receipt).context("Failed to serialize receipt")?;
-        Ok(serialized)
+
+        Ok(rollup_receipt)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tasks::{serialize_obj, setup_agent_and_metadata_dir, test_constants};
+    use crate::tasks::{setup_agent_and_metadata_dir, test_constants};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::deserialize_from_bincode_bytes;
@@ -68,20 +56,9 @@ mod tests {
 
         let image_id = test_constants::FIXTURES_IMAGE_ID.to_string();
 
-        let resolved_receipt_serialized =
-            serialize_obj(&resolved_receipt).context("Failed to serialize")?;
-        let image_id_serialized = serialize_obj(&image_id).context("Failed to serialize")?;
+        let stark_receipt = agent.finalize(resolved_receipt, journal, image_id)?;
 
-        let finalize_input = serde_json::to_vec(&vec![
-            resolved_receipt_serialized,
-            journal.bytes,
-            image_id_serialized,
-        ])
-        .context("Failed to serialize finalize input")?;
-
-        let stark_receipt = agent.finalize(finalize_input).context("Failed to finalize")?;
-
-        info!("finalize result: ({size} bytes)", size = stark_receipt.len());
+        info!("finalize result: ({size} bytes)", size = stark_receipt.seal_size());
 
         Ok(())
     }

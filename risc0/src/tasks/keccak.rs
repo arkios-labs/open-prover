@@ -1,46 +1,38 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
+use risc0_zkvm::{ProveKeccakRequest, SuccinctReceipt, Unknown};
 use tracing::info;
 
-use crate::tasks::{ProveKeccakRequestLocal, Risc0Agent, convert, deserialize_obj, serialize_obj};
+use crate::tasks::Risc0Agent;
 
 impl Risc0Agent {
-    pub fn keccak(&self, input: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn keccak(
+        &self,
+        prove_keccak_request: ProveKeccakRequest,
+    ) -> Result<SuccinctReceipt<Unknown>> {
         info!("Agent::keccak()");
         let start_time = Instant::now();
 
-        if input.is_empty() {
-            bail!("keccak input is empty");
-        }
+        let keccak_receipt = self.prover.prove_keccak(&prove_keccak_request)?;
 
-        let prove_keccak_request_local: ProveKeccakRequestLocal =
-            deserialize_obj(&input).context("Failed to deserialize keccak request")?;
-
-        // Conversion is required because the library's `ProveKeccakRequest` type doesn't support deserialization
-        let prove_keccak_request = convert(prove_keccak_request_local);
-
-        let keccak_receipt = self.prover.prove_keccak(&prove_keccak_request);
-
-        let serialized = serialize_obj(&keccak_receipt?).context("Failed to serialize")?;
         let elapsed = start_time.elapsed();
         info!("Agent::keccak() took {elapsed:?}");
-        Ok(serialized)
+
+        Ok(keccak_receipt)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tasks::test_constants;
-    use crate::tasks::{
-        ProveKeccakRequestLocal, deserialize_obj, serialize_obj, setup_agent_and_metadata_dir,
-    };
+    use crate::tasks::{ProveKeccakRequestLocal, setup_agent_and_metadata_dir};
+    use crate::tasks::{convert, test_constants};
     use anyhow::Context;
     use anyhow::Result;
     use common::serialization::bincode::{
         deserialize_from_bincode_bytes, serialize_to_bincode_bytes,
     };
-    use risc0_zkvm::{ProveKeccakRequest, SuccinctReceipt, Unknown};
+    use risc0_zkvm::ProveKeccakRequest;
     use std::fs;
     use tracing::info;
 
@@ -78,23 +70,19 @@ mod tests {
                 input: keccak_req.input.clone(),
             };
 
-            let bytes = serialize_obj(&local_req)?;
             info!("Proving keccak [{current_index} / {keccak_count}]...");
 
-            let result = agent.keccak(bytes)?;
+            let result = agent.keccak(convert(local_req))?;
             assert!(
-                !result.is_empty(),
+                !result.get_seal_bytes().is_empty(),
                 "Keccak result should not be empty for request {current_index}"
             );
 
-            let receipt: SuccinctReceipt<Unknown> =
-                deserialize_obj(&result).context("Failed to deserialize keccak receipt")?;
-
             info!(
                 "Keccak [{current_index}] result size: {result_size}",
-                result_size = result.len()
+                result_size = result.seal_size()
             );
-            all_receipts.push(receipt);
+            all_receipts.push(result);
         }
 
         assert_eq!(
