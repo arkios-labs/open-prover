@@ -25,6 +25,9 @@ jobs:
     steps:
       - name: Checkout zkrabbit-prover
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT || github.token }}
 
       # Setup sccache to cache Rust compilations
       - name: Setup sccache
@@ -41,6 +44,9 @@ jobs:
     steps:
       - name: Checkout zkrabbit-prover
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT || github.token }}
 
       # Setup sccache to cache Rust compilations
       - name: Setup sccache
