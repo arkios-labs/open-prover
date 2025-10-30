@@ -8,6 +8,7 @@ mod stark2snark;
 mod union;
 
 use anyhow::{Context, Result};
+use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
 use risc0_zkvm::{
     Assumption, AssumptionReceipt, Digest, Journal, ProveKeccakRequest, ProverOpts, ProverServer,
     ReceiptClaim, Segment, SuccinctReceipt, Unknown, VerifierContext, get_prover_server,
@@ -89,14 +90,13 @@ impl Risc0Agent {
 }
 
 pub fn deserialize_obj<T: DeserializeOwned>(encoded: &[u8]) -> Result<T> {
-    let json_str = std::str::from_utf8(encoded)?;
-    let decoded = serde_json::from_str(json_str)?;
+    let decoded = deserialize_from_bincode_bytes(encoded)?;
     Ok(decoded)
 }
 
 pub fn serialize_obj<T: Serialize>(item: &T) -> Result<Vec<u8>> {
-    let json_str = serde_json::to_string(item)?;
-    Ok(json_str.into_bytes())
+    let encoded = serialize_to_bincode_bytes(item)?;
+    Ok(encoded)
 }
 
 pub(crate) fn convert(local: ProveKeccakRequestLocal) -> ProveKeccakRequest {
