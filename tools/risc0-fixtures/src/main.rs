@@ -59,7 +59,9 @@ pub fn generate_fixtures(
     fs::write(metadata_dir.join(INPUT_DATA_PATH), &serialize_to_bincode_bytes(&input_data)?)?;
 
     {
-        let messages = agent.execute(SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
+        let (tx, rx) = std::sync::mpsc::sync_channel::<ExecuteMessage>(50);
+        agent.execute(tx, SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
+        let messages = rx.iter().collect::<Vec<ExecuteMessage>>();
         for message in messages {
             match message {
                 ExecuteMessage::Segment(seg) => segments.push(seg),
