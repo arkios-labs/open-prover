@@ -12,6 +12,8 @@ env:
   CARGO_TERM_COLOR: always
   # Set RUSTC_WRAPPER to make cargo use sccache
   RUSTC_WRAPPER: "sccache"
+  # Use prebuilt RISC0 artifacts to skip expensive build.rs execution
+  RISC0_BUILD_LOCKED: "1"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
