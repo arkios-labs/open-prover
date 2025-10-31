@@ -5,8 +5,6 @@ use risc0_zkvm::{
 };
 use std::sync::{Arc, Mutex};
 
-use crate::tasks::Risc0Agent;
-
 pub struct ExecuteResult {
     pub total_cycles: u64,
     pub segment_count: u64,
@@ -46,70 +44,67 @@ impl CoprocessorCallback for Coprocessor {
 const V2_ELF_MAGIC: &[u8] = b"R0BF";
 const EXEC_LIMIT: u64 = 100_000 * 1024 * 1024;
 
-impl Risc0Agent {
-    pub fn execute(
-        &self,
-        tx: std::sync::mpsc::SyncSender<ExecuteMessage>,
-        segment_limit_po2: u32,
-        keccak_limit_po2: u32,
-        elf_data: Vec<u8>,
-        input: Vec<u32>,
-    ) {
-        if elf_data.len() < V2_ELF_MAGIC.len() || elf_data[0..V2_ELF_MAGIC.len()] != *V2_ELF_MAGIC {
-            tracing::error!("ELF MAGIC mismatch");
+pub fn execute(
+    tx: std::sync::mpsc::SyncSender<ExecuteMessage>,
+    segment_limit_po2: u32,
+    keccak_limit_po2: u32,
+    elf_data: Vec<u8>,
+    input: Vec<u32>,
+) {
+    if elf_data.len() < V2_ELF_MAGIC.len() || elf_data[0..V2_ELF_MAGIC.len()] != *V2_ELF_MAGIC {
+        tracing::error!("ELF MAGIC mismatch");
+        let _ = tx.send(ExecuteMessage::Fault);
+        return;
+    }
+
+    let keccak_count: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+    let coproc = Coprocessor::new(tx.clone(), Arc::clone(&keccak_count));
+
+    // Build executor environment
+    let env = match ExecutorEnv::builder()
+        .write_slice(&input)
+        .session_limit(Some(EXEC_LIMIT))
+        .coprocessor_callback(coproc)
+        .segment_limit_po2(segment_limit_po2)
+        .keccak_max_po2(keccak_limit_po2)
+        .unwrap()
+        .build()
+    {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::error!("Failed to build executor environment: {e}");
             let _ = tx.send(ExecuteMessage::Fault);
             return;
         }
+    };
 
-        let keccak_count: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
-        let coproc = Coprocessor::new(tx.clone(), Arc::clone(&keccak_count));
+    let mut executor = match ExecutorImpl::from_elf(env, &elf_data) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::error!("Failed to create executor from ELF: {e}");
+            let _ = tx.send(ExecuteMessage::Fault);
+            return;
+        }
+    };
 
-        // Build executor environment
-        let env = match ExecutorEnv::builder()
-            .write_slice(&input)
-            .session_limit(Some(EXEC_LIMIT))
-            .coprocessor_callback(coproc)
-            .segment_limit_po2(segment_limit_po2)
-            .keccak_max_po2(keccak_limit_po2)
-            .unwrap()
-            .build()
-        {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::error!("Failed to build executor environment: {e}");
-                let _ = tx.send(ExecuteMessage::Fault);
-                return;
-            }
-        };
-
-        let mut executor = match ExecutorImpl::from_elf(env, &elf_data) {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::error!("Failed to create executor from ELF: {e}");
-                let _ = tx.send(ExecuteMessage::Fault);
-                return;
-            }
-        };
-
-        match executor.run_with_callback(|segment| {
-            tx.send(ExecuteMessage::Segment(segment))?;
-            Ok(Box::new(NullSegmentRef {}))
-        }) {
-            Ok(session) => {
-                let keccak_count_value = *keccak_count.lock().unwrap();
-                let result = ExecuteResult {
-                    total_cycles: session.total_cycles,
-                    segment_count: session.segments.len() as u64,
-                    keccak_count: keccak_count_value,
-                    journal: session.journal.clone(),
-                    assumptions: session.assumptions.clone(),
-                };
-                let _ = tx.send(ExecuteMessage::Result(result));
-            }
-            Err(e) => {
-                tracing::error!("Execution error: {e}");
-                let _ = tx.send(ExecuteMessage::Fault);
-            }
+    match executor.run_with_callback(|segment| {
+        tx.send(ExecuteMessage::Segment(segment))?;
+        Ok(Box::new(NullSegmentRef {}))
+    }) {
+        Ok(session) => {
+            let keccak_count_value = *keccak_count.lock().unwrap();
+            let result = ExecuteResult {
+                total_cycles: session.total_cycles,
+                segment_count: session.segments.len() as u64,
+                keccak_count: keccak_count_value,
+                journal: session.journal.clone(),
+                assumptions: session.assumptions.clone(),
+            };
+            let _ = tx.send(ExecuteMessage::Result(result));
+        }
+        Err(e) => {
+            tracing::error!("Execution error: {e}");
+            let _ = tx.send(ExecuteMessage::Fault);
         }
     }
 }
@@ -122,14 +117,8 @@ mod tests {
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use std::{fs, path::PathBuf};
 
-    fn setup_agent() -> Risc0Agent {
-        Risc0Agent::new().unwrap()
-    }
-
     #[tokio::test]
     async fn test_execute_keccak_union() {
-        let agent = setup_agent();
-
         let segment_limit_po2 = 18;
         let keccak_limit_po2 = 16;
 
@@ -142,7 +131,7 @@ mod tests {
 
         let (tx, rx) = std::sync::mpsc::sync_channel::<ExecuteMessage>(50);
 
-        agent.execute(tx, segment_limit_po2, keccak_limit_po2, elf_data, input_data);
+        execute(tx, segment_limit_po2, keccak_limit_po2, elf_data, input_data);
 
         let mut segment_count: u64 = 0;
         let mut keccak_count: u64 = 0;

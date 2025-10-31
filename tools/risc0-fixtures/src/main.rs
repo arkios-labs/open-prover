@@ -10,7 +10,7 @@ use risc0_zkvm_methods::{MULTI_TEST_ELF, multi_test::MultiTestSpec};
 
 use risc0::tasks::{
     Risc0Agent, compress_binary_tree,
-    execute::{ExecuteMessage, ExecuteResult},
+    execute::{ExecuteMessage, ExecuteResult, execute},
     test_constants::{
         ASSUMPTIONS_PATH, ELF_DATA_PATH, FINAL_RECEIPT_PATH, INPUT_DATA_PATH,
         JOIN_ROOT_RECEIPT_PATH, JOURNAL_PATH, KECCAK_RECEIPTS_PATH, KECCAKS_PATH, METADATA_PATH,
@@ -47,8 +47,6 @@ pub fn generate_fixtures(
     image_id: Digest,
     input_data: Vec<u32>,
 ) -> Result<(PathBuf, Risc0Agent)> {
-    let agent = Risc0Agent::new().context("Failed to create agent")?;
-
     let mut segments: Vec<Segment> = Vec::new();
     let mut keccaks: Vec<ProveKeccakRequest> = Vec::new();
     let mut result: Option<ExecuteResult> = None;
@@ -60,7 +58,7 @@ pub fn generate_fixtures(
 
     {
         let (tx, rx) = std::sync::mpsc::sync_channel::<ExecuteMessage>(50);
-        agent.execute(tx, SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
+        execute(tx, SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
         let messages = rx.iter().collect::<Vec<ExecuteMessage>>();
         for message in messages {
             match message {
@@ -102,6 +100,8 @@ pub fn generate_fixtures(
         metadata_dir.join(ASSUMPTIONS_PATH),
         &serialize_to_bincode_bytes(&result.assumptions.clone())?,
     )?;
+
+    let agent = Risc0Agent::new().context("Failed to create agent")?;
 
     let mut segment_lifted_receipts: Vec<SuccinctReceipt<ReceiptClaim>> =
         Vec::with_capacity(segments.len());
