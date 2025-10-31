@@ -4,6 +4,7 @@ use risc0_zkvm::{
     NullSegmentRef, ProveKeccakRequest, Segment,
 };
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 pub struct ExecuteResult {
     pub total_cycles: u64,
@@ -22,19 +23,19 @@ pub enum ExecuteMessage {
 }
 
 struct Coprocessor {
-    tx: std::sync::mpsc::SyncSender<ExecuteMessage>,
+    tx: mpsc::Sender<ExecuteMessage>,
     keccak_count: Arc<Mutex<u64>>,
 }
 
 impl Coprocessor {
-    fn new(tx: std::sync::mpsc::SyncSender<ExecuteMessage>, keccak_count: Arc<Mutex<u64>>) -> Self {
+    fn new(tx: mpsc::Sender<ExecuteMessage>, keccak_count: Arc<Mutex<u64>>) -> Self {
         Self { tx, keccak_count }
     }
 }
 
 impl CoprocessorCallback for Coprocessor {
     fn prove_keccak(&mut self, request: ProveKeccakRequest) -> Result<()> {
-        self.tx.send(ExecuteMessage::Keccak(request))?;
+        self.tx.blocking_send(ExecuteMessage::Keccak(request))?;
         let mut count = self.keccak_count.lock().unwrap();
         *count += 1;
         Ok(())
@@ -45,7 +46,7 @@ const V2_ELF_MAGIC: &[u8] = b"R0BF";
 const EXEC_LIMIT: u64 = 100_000 * 1024 * 1024;
 
 pub fn execute(
-    tx: std::sync::mpsc::SyncSender<ExecuteMessage>,
+    tx: mpsc::Sender<ExecuteMessage>,
     segment_limit_po2: u32,
     keccak_limit_po2: u32,
     elf_data: Vec<u8>,
@@ -53,7 +54,7 @@ pub fn execute(
 ) {
     if elf_data.len() < V2_ELF_MAGIC.len() || elf_data[0..V2_ELF_MAGIC.len()] != *V2_ELF_MAGIC {
         tracing::error!("ELF MAGIC mismatch");
-        let _ = tx.send(ExecuteMessage::Fault);
+        tx.blocking_send(ExecuteMessage::Fault).unwrap();
         return;
     }
 
@@ -73,7 +74,7 @@ pub fn execute(
         Ok(e) => e,
         Err(e) => {
             tracing::error!("Failed to build executor environment: {e}");
-            let _ = tx.send(ExecuteMessage::Fault);
+            tx.blocking_send(ExecuteMessage::Fault).unwrap();
             return;
         }
     };
@@ -82,13 +83,13 @@ pub fn execute(
         Ok(e) => e,
         Err(e) => {
             tracing::error!("Failed to create executor from ELF: {e}");
-            let _ = tx.send(ExecuteMessage::Fault);
+            tx.blocking_send(ExecuteMessage::Fault).unwrap();
             return;
         }
     };
 
     match executor.run_with_callback(|segment| {
-        tx.send(ExecuteMessage::Segment(segment))?;
+        tx.blocking_send(ExecuteMessage::Segment(segment))?;
         Ok(Box::new(NullSegmentRef {}))
     }) {
         Ok(session) => {
@@ -100,11 +101,11 @@ pub fn execute(
                 journal: session.journal.clone(),
                 assumptions: session.assumptions.clone(),
             };
-            let _ = tx.send(ExecuteMessage::Result(result));
+            tx.blocking_send(ExecuteMessage::Result(result)).unwrap();
         }
         Err(e) => {
             tracing::error!("Execution error: {e}");
-            let _ = tx.send(ExecuteMessage::Fault);
+            tx.blocking_send(ExecuteMessage::Fault).unwrap();
         }
     }
 }
@@ -116,6 +117,7 @@ mod tests {
     use crate::tasks::test_constants::{ELF_DATA_PATH, INPUT_DATA_PATH, METADATA_PATH};
     use common::serialization::bincode::deserialize_from_bincode_bytes;
     use std::{fs, path::PathBuf};
+    use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn test_execute_keccak_union() {
@@ -129,15 +131,17 @@ mod tests {
         let input_bytes: Vec<u8> = fs::read(metadata_dir.join(INPUT_DATA_PATH)).unwrap();
         let input_data: Vec<u32> = deserialize_from_bincode_bytes(&input_bytes).unwrap();
 
-        let (tx, rx) = std::sync::mpsc::sync_channel::<ExecuteMessage>(50);
+        let (tx, mut rx) = mpsc::channel::<ExecuteMessage>(50);
 
-        execute(tx, segment_limit_po2, keccak_limit_po2, elf_data, input_data);
+        tokio::task::spawn_blocking(move || {
+            execute(tx, segment_limit_po2, keccak_limit_po2, elf_data, input_data);
+        });
 
         let mut segment_count: u64 = 0;
         let mut keccak_count: u64 = 0;
         let mut has_result = false;
 
-        for message in rx {
+        while let Some(message) = rx.recv().await {
             match message {
                 ExecuteMessage::Segment(segment) => {
                     segment_count += 1;

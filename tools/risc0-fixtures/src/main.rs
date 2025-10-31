@@ -1,13 +1,5 @@
-use std::{collections::VecDeque, fs, path::PathBuf};
-
 use anyhow::{Context, Result};
 use common::serialization::bincode::{deserialize_from_bincode_bytes, serialize_to_bincode_bytes};
-use risc0_zkvm::{
-    Digest, ProveKeccakRequest, Receipt, ReceiptClaim, Segment, SuccinctReceipt, Unknown,
-    compute_image_id, serde::to_vec,
-};
-use risc0_zkvm_methods::{MULTI_TEST_ELF, multi_test::MultiTestSpec};
-
 use risc0::tasks::{
     Risc0Agent, compress_binary_tree,
     execute::{ExecuteMessage, ExecuteResult, execute},
@@ -18,11 +10,19 @@ use risc0::tasks::{
         UNION_ROOT_RECEIPT_PATH,
     },
 };
+use risc0_zkvm::{
+    Digest, ProveKeccakRequest, Receipt, ReceiptClaim, Segment, SuccinctReceipt, Unknown,
+    compute_image_id, serde::to_vec,
+};
+use risc0_zkvm_methods::{MULTI_TEST_ELF, multi_test::MultiTestSpec};
+use std::{collections::VecDeque, fs, path::PathBuf};
+use tokio::sync::mpsc;
 
 const SEGMENT_LIMIT_PO2: u32 = 18;
 const KECCAK_LIMIT_PO2: u32 = 16;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
 
     let elf_data = MULTI_TEST_ELF.to_vec();
@@ -31,9 +31,11 @@ fn main() {
 
     tracing::info!("Generating fixtures for image id: {}", image_id.to_string());
 
-    let (metadata_dir, _agent) = generate_fixtures(elf_data, image_id, input_data)
-        .context("Failed to generate fixtures")
-        .unwrap();
+    let (metadata_dir, _agent) =
+        generate_fixtures(elf_data, image_id, input_data).await.unwrap_or_else(|e| {
+            eprintln!("Failed to generate fixtures: {}", e);
+            std::process::exit(1);
+        });
 
     validate_generated_fixtures(metadata_dir, image_id)
         .context("Failed to validate generated fixtures")
@@ -42,7 +44,7 @@ fn main() {
     tracing::info!("Fixtures generated successfully");
 }
 
-pub fn generate_fixtures(
+pub async fn generate_fixtures(
     elf_data: Vec<u8>,
     image_id: Digest,
     input_data: Vec<u32>,
@@ -57,10 +59,11 @@ pub fn generate_fixtures(
     fs::write(metadata_dir.join(INPUT_DATA_PATH), &serialize_to_bincode_bytes(&input_data)?)?;
 
     {
-        let (tx, rx) = std::sync::mpsc::sync_channel::<ExecuteMessage>(50);
-        execute(tx, SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
-        let messages = rx.iter().collect::<Vec<ExecuteMessage>>();
-        for message in messages {
+        let (tx, mut rx) = mpsc::channel::<ExecuteMessage>(50);
+        tokio::task::spawn_blocking(move || {
+            execute(tx, SEGMENT_LIMIT_PO2, KECCAK_LIMIT_PO2, elf_data, input_data);
+        });
+        while let Some(message) = rx.recv().await {
             match message {
                 ExecuteMessage::Segment(seg) => segments.push(seg),
                 ExecuteMessage::Keccak(kecc) => keccaks.push(kecc),

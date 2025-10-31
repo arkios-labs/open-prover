@@ -6536,6 +6536,7 @@ dependencies = [
  "risc0-zkvm-methods",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
 ]
