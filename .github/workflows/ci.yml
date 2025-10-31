@@ -10,6 +10,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Set RUSTC_WRAPPER to make cargo use sccache
+  RUSTC_WRAPPER: "sccache"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -22,6 +24,10 @@ jobs:
       - name: Checkout zkrabbit-prover
         uses: actions/checkout@v4
 
+      # Setup sccache to cache Rust compilations
+      - name: Setup sccache
+        uses: mozilla/sccache-action@v0.0.5
+
       - name: Check format
         run: cargo fmt -- --check
 
@@ -33,6 +39,10 @@ jobs:
     steps:
       - name: Checkout zkrabbit-prover
         uses: actions/checkout@v4
+
+      # Setup sccache to cache Rust compilations
+      - name: Setup sccache
+        uses: mozilla/sccache-action@v0.0.5
 
       # RISC0 SNARK conversion uses Docker internally.
       # Make sure the runner user has docker access.
