@@ -66,7 +66,7 @@ pub async fn generate_fixtures(
         while let Some(message) = rx.recv().await {
             match message {
                 ExecuteMessage::Segment(seg) => segments.push(seg),
-                ExecuteMessage::Keccak(kecc) => keccaks.push(kecc),
+                ExecuteMessage::Keccak(kecc) => keccaks.push(kecc.request),
                 ExecuteMessage::Result(res) => {
                     result = Some(res);
                 }
