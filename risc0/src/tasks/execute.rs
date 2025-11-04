@@ -5,6 +5,7 @@ use risc0_zkvm::{
 };
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+use tracing::info;
 
 pub struct ExecuteResult {
     pub total_cycles: u64,
@@ -84,6 +85,9 @@ pub fn execute<T: bytemuck::Pod>(
             return;
         }
     };
+
+    info!("Building executor from ELF");
+    info!("ELF data length: {}", elf_data.len());
 
     let mut executor = match ExecutorImpl::from_elf(env, &elf_data) {
         Ok(e) => e,

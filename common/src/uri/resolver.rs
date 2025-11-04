@@ -7,6 +7,7 @@ use url::Url;
 
 use super::{data_uri, http_uri, storage_uri};
 
+#[derive(Clone)]
 pub struct UriResolver {
     storage: Arc<dyn Storage>,
     storage_scheme: String,

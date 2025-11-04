@@ -1,4 +1,5 @@
 pub mod command;
+pub mod server;
 pub mod tasks;
 
 pub mod proto {
