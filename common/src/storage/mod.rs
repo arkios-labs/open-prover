@@ -21,7 +21,7 @@ pub enum StorageType {
 }
 
 #[async_trait]
-pub trait Storage {
+pub trait Storage: Send + Sync {
     fn get_type(&self) -> StorageType;
     async fn get(&self, file_path: &str) -> Result<Vec<u8>, StorageError>;
     async fn put(&self, file_path: &str, data: &[u8]) -> Result<(), StorageError>;
