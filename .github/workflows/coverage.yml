@@ -1,0 +1,57 @@
+name: Coverage
+
+permissions: read-all
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: "sccache"
+  RISC0_BUILD_LOCKED: "1"
+
+concurrency:
+  group: coverage-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: [ self-hosted, zkrabbit-prover ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT || github.token }}
+
+      - name: Setup sccache
+        uses: mozilla/sccache-action@v0.0.5
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Install risc0 groth16 component (for snark tests)
+        run: |
+          curl -L https://risczero.com/install | bash
+          $HOME/.risc0/bin/rzup install risc0-groth16
+
+      - name: Sanity check docker access
+        run: |
+          docker version --format 'Client={{.Client.Version}} Server={{.Server.Version}}'
+
+      - name: Generate coverage report
+        run: |
+          # RUSTC_WRAPPER is incompatible with llvm-cov's instrumentation
+          unset RUSTC_WRAPPER
+          cargo llvm-cov --release --features=cuda --locked \
+            --lcov --output-path lcov.info \
+            -- --test-threads=1
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: lcov.info
