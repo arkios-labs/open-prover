@@ -1,1 +1,1 @@
-# zkrabbit-prover
+# open-prover
