@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package a41.zkrabbit.agent.v0;
+
+service Risc0Service {
+  rpc Execute(Risc0ExecuteRequest) returns (stream Risc0ExecuteResponse);
+  rpc ProveSegment(Risc0ProveSegmentRequest) returns (Risc0ProveSegmentResponse);
+  rpc ProveKeccak(Risc0ProveKeccakRequest) returns (Risc0ProveKeccakResponse);
+  rpc Join(Risc0JoinRequest) returns (Risc0JoinResponse);
+  rpc Union(Risc0UnionRequest) returns (Risc0UnionResponse);
+  rpc Resolve(Risc0ResolveRequest) returns (Risc0ResolveResponse);
+  rpc Finalize(Risc0FinalizeRequest) returns (Risc0FinalizeResponse);
+  rpc Stark2Snark(Risc0Stark2SnarkRequest) returns (Risc0Stark2SnarkResponse);
+}
+
+message Risc0FileMetadata {
+  string file_uri = 1;
+  uint64 file_size = 2;
+}
+
+message Risc0ExecuteRequest {
+  string job_id = 1;
+  string task_id = 2;
+  uint32 segment_po2 = 3;
+  uint64 exec_cycle_limit = 4;
+  string elf_uri = 5;
+  string image_id = 6;
+  string stdin_uri = 7;
+  repeated string assumption_receipt_uris = 8;
+}
+
+message Risc0ExecuteResponse {
+  uint64 sequence = 1;
+  oneof payload {
+    Risc0FileMetadata segment = 2;
+    Risc0FileMetadata keccak = 3;
+    Risc0ExecuteResult result = 4;
+  }
+}
+
+message Risc0ExecuteResult {
+  uint64 total_cycles = 1;
+  uint64 segment_count = 2;
+  uint64 keccak_count = 3;
+  Risc0FileMetadata journal = 4;
+  Risc0FileMetadata receipt = 5;
+}
+
+message Risc0ProveSegmentRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string segment_uri = 3;
+}
+
+message Risc0ProveSegmentResponse {
+  Risc0FileMetadata receipt = 1;
+}
+
+message Risc0ProveKeccakRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string prove_keccak_request_uri = 3;
+}
+
+message Risc0ProveKeccakResponse {
+  Risc0FileMetadata receipt = 1;
+}
+
+message Risc0JoinRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string left_receipt_uri = 3;
+  string right_receipt_uri = 4;
+}
+
+message Risc0JoinResponse {
+  Risc0FileMetadata receipt = 1;
+}
+
+message Risc0UnionRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string left_receipt_uri = 3;
+  string right_receipt_uri = 4;
+}
+
+message Risc0UnionResponse {
+  Risc0FileMetadata receipt = 1;
+}
+
+message Risc0ResolveRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string root_receipt_uri = 3;
+  string union_receipt_uri = 4;
+  repeated string assumption_receipt_uris = 5;
+}
+
+message Risc0ResolveResponse {
+  Risc0FileMetadata receipt = 1;
+}
+
+message Risc0FinalizeRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string root_receipt_uri = 3;
+  string journal_uri = 4;
+  string image_id = 5;
+}
+
+message Risc0FinalizeResponse {
+  Risc0FileMetadata receipt = 1;
+}
+
+message Risc0Stark2SnarkRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string stark_receipt_uri = 3;
+}
+
+message Risc0Stark2SnarkResponse {
+  Risc0FileMetadata receipt = 1;
+}
